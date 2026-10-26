@@ -3,11 +3,11 @@
     "devenv": {
       "locked": {
         "dir": "src/modules",
-        "lastModified": 1783943325,
-        "narHash": "sha256-Bq+YOjx54mT0hH0qWlQ+96dKUuGEhkP+ZsMVxMOPcXA=",
+        "lastModified": 1793025392,
+        "narHash": "sha256-gq7TcA/Enyxw50ucuLZG8ocUWQro6sryMlAejEex0DY=",
         "owner": "cachix",
         "repo": "devenv",
-        "rev": "06ee813b2f5a8fc1838cff9cfb6bd4f0466fc925",
+        "rev": "6af962f65a11a6a0a785e3ec957cb4b75245e086",
         "type": "github"
       },
       "original": {
@@ -18,32 +18,12 @@
       }
     },
     "nixpkgs": {
-      "inputs": {
-        "nixpkgs-src": "nixpkgs-src"
-      },
       "locked": {
-        "lastModified": 1783345554,
-        "narHash": "sha256-LZhOm4kqjHUnwP4CNHpaqqEVcumGNd1PvOEOad8LkS0=",
-        "owner": "cachix",
-        "repo": "devenv-nixpkgs",
-        "rev": "6004ea8c229fe9d41b21c6f4c76bf6c2e10771dd",
-        "type": "github"
-      },
-      "original": {
-        "owner": "cachix",
-        "ref": "rolling",
-        "repo": "devenv-nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1783279667,
-        "narHash": "sha256-/NAkDSsve+GNM0Bt6tleJdCGfsTlK89nPjkVOzZMo0s=",
+        "lastModified": 1792842277,
+        "narHash": "sha256-pGPnZGi8y9d76xNeracniXO3dsYVROEmMkMc8jD0Ihc=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "f205b5574fd0cb7da5b702a2da51507b7f4fdd1b",
+        "rev": "d3b13ad75cc492690728f9307e443dec9ef9a20e",
         "type": "github"
       },
       "original": {
@@ -53,10 +33,31 @@
         "type": "github"
       }
     },
+    "openspec": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1792813863,
+        "narHash": "sha256-ACAt6qIa8Xm1lB2HLbCByCRSujtBFTq60NFhohHItDc=",
+        "owner": "Fission-AI",
+        "repo": "OpenSpec",
+        "rev": "6d04a1b58dedc95729d34e4f223d9d483aae210a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Fission-AI",
+        "repo": "OpenSpec",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "devenv": "devenv",
         "nixpkgs": "nixpkgs",
+        "openspec": "openspec",
         "rust-overlay": "rust-overlay"
       }
     },
@@ -67,11 +68,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1783921439,
-        "narHash": "sha256-DsSIQSRMrLOz40LrGZ03sp2RlJ9sz3wKpd8XPTOzXnw=",
+        "lastModified": 1793000331,
+        "narHash": "sha256-6sLQgHX/V/yF8VrhmsJroujeRua1GY3nDTEpnY7tHF4=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "e013376c32a8fcf07ddb6ec71739552bc118b7bd",
+        "rev": "0d0575988e4bb9ebc4cf1afb1cec1ceac0b5914e",
         "type": "github"
       },
       "original": {

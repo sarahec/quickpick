@@ -1,12 +1,15 @@
-{ pkgs, ... }:
+{ pkgs, inputs, ... }:
 
 {
   # https://devenv.sh/packages/
-  packages = with pkgs; [
-    evcxr
-    gitoxide
-    openspec
-  ];
+  packages =
+    with pkgs;
+    [
+      evcxr
+      gitoxide
+      jujutsu
+    ]
+    ++ [ inputs.openspec.packages.${pkgs.system}.default ];
 
   dotenv.enable = true;
 
