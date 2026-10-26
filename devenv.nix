@@ -13,6 +13,13 @@
 
   dotenv.enable = true;
 
+  languages.nix.enable = true;
+
+  languages.python = {
+    enable = true;
+    uv.enable = true;
+  };
+
   languages.rust = {
     enable = true;
     channel = "stable";
