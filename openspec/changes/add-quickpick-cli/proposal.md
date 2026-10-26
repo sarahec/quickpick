@@ -4,7 +4,7 @@ Maintaining Nixpkgs often requires backporting package updates from `master` to 
 
 ## What Changes
 
-- Add a new Rust CLI binary named `NIXPKGS` to the `nmt` crate.
+- Add a new Rust CLI binary named `NIXPKGS` to the `quickpick` crate.
 - Accept a Nixpkgs package attribute path (e.g. `python3Packages.openai`) with optional `--from` and `--to` version filters.
 - Resolve the package's Nix expression path and use the local `nixpkgs` Git repository.
 - Compare the source branch (`master` by default) and current release branch (`release-26.05` by default) histories for that expression path.
@@ -18,7 +18,7 @@ Maintaining Nixpkgs often requires backporting package updates from `master` to 
 
 ### New Capabilities
 
-- `NIXPKGS-cli`: A command-line tool that discovers backport commits for a Nixpkgs package and emits `git cherry-pick -x` commands.
+- `quickpick-cli`: A command-line tool that discovers backport commits for a Nixpkgs package and emits `git cherry-pick -x` commands.
 
 ### Modified Capabilities
 

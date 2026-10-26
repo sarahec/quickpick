@@ -4,7 +4,7 @@ Project-level guidance for AI coding agents working in this repository.
 
 ## Project Overview
 
-`nmt` is a Rust project (edition 2024). The development environment is managed with [devenv](https://devenv.sh/) and [direnv](https://direnv.net/), backed by Nix. Rust tooling is pinned via the `rust-overlay` Nix input and uses the **stable** channel.
+`quickpick` is a Rust project (edition 2024). The development environment is managed with [devenv](https://devenv.sh/) and [direnv](https://direnv.net/), backed by Nix. Rust tooling is pinned via the `rust-overlay` Nix input and uses the **stable** channel.
 
 ## Development Environment
 

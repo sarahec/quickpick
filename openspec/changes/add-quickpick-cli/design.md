@@ -1,6 +1,6 @@
 ## Context
 
-`nmt` is a Rust 2024 crate with no external dependencies. It currently prints "Hello, world!". This change turns it into `NIXPKGS`, a small CLI utility for Nixpkgs maintainers who need to backport package updates from a source branch to a release branch.
+`quickpick` is a Rust 2024 crate with no external dependencies. It currently prints "Hello, world!". This change turns it into `NIXPKGS`, a small CLI utility for Nixpkgs maintainers who need to backport package updates from a source branch to a release branch.
 
 The tool must:
 1. Accept a Nixpkgs attribute path such as `python3Packages.openai`.
