@@ -59,6 +59,6 @@ Before submitting changes, ensure the following all pass:
 ## Conventions
 
 - Rust edition: **2024**
-- No external dependencies are currently declared in `Cargo.toml`. Add dependencies with `cargo add <crate>` rather than editing `Cargo.toml` by hand.
+- Add dependencies with `cargo add <crate>` rather than editing `Cargo.toml` by hand.
 - `Cargo.lock` is **gitignored** (library crate convention). Do not commit it.
 - Environment variables are loaded from `.env` (gitignored). Do not commit secrets.

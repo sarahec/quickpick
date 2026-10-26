@@ -9,7 +9,8 @@ schema: spec-driven
 #     We use conventional commits
 #     Domain: e-commerce platform
   context: |
-    This is a collection of CLI tools under a common package name.
+    This is a CLI tool to identify the work needed when cherry-picking
+    commits from one branch to another in nixpkgs.
     Tech stack: Rust, Jujutsu (https://docs.jj-vcs.dev/latest/), Nix
     The developer shell comes from devenv (https://devenv.sh/)
     We use conventional commits
