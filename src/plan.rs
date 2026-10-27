@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use git2::{Commit, Oid, Repository, Sort, Tree};
+use git2::{Commit, FileMode, Index, Oid, Repository, Sort, Tree};
 
 use crate::error::Error;
 use crate::repo;
@@ -103,9 +103,6 @@ pub struct Plan {
     pub anchor: Option<Oid>,
     /// Ordered steps.
     pub steps: Vec<Step>,
-    /// The path-touching commits of the range, oldest first, before
-    /// classification into steps.
-    pub range: Vec<Oid>,
     /// Warnings to print on stderr.
     pub warnings: Vec<String>,
     /// Whether the simulated result matches the path at `to`.
@@ -135,7 +132,6 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
             to,
             anchor: None,
             steps: vec![],
-            range: vec![],
             warnings: vec![],
             verified: true,
         });
@@ -159,6 +155,7 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
     let mut sim = Simulation {
         repo,
         path: &path,
+        state: repo.find_commit(onto)?.tree()?,
         warnings: &mut warnings,
         warned: BTreeSet::new(),
         steps: Vec::new(),
@@ -166,6 +163,7 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
     for id in &range {
         sim.step(repo.find_commit(*id)?)?;
     }
+    let verified = repo::tree_entry(&sim.state, &path)? == to_entry;
 
     // `from` is the first commit of the range for reporting purposes.
     let from_oid = from.or(range.first().copied());
@@ -178,9 +176,8 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
         to,
         anchor: Some(anchor),
         steps: sim.steps,
-        range,
         warnings,
-        verified: false,
+        verified,
     })
 }
 
@@ -340,17 +337,18 @@ fn range_walk(
     Ok(range)
 }
 
-/// Mutable classification state threaded through [`Simulation::step`].
+/// Mutable simulation state threaded through [`Simulation::step`].
 struct Simulation<'a, 'b> {
     repo: &'a Repository,
     path: &'b Path,
+    state: Tree<'a>,
     warnings: &'b mut Vec<String>,
     warned: BTreeSet<String>,
     steps: Vec<Step>,
 }
 
 impl Simulation<'_, '_> {
-    /// Classify `commit` as PICK or SYNC.
+    /// Classify `commit` as PICK or SYNC and advance the simulated state.
     fn step(&mut self, commit: Commit<'_>) -> Result<(), Error> {
         let c_tree = commit.tree()?;
         let parent_tree = match commit.parent(0) {
@@ -363,6 +361,13 @@ impl Simulation<'_, '_> {
         if !outside.is_empty() {
             return self.sync(info, Reason::OutsidePaths(outside));
         }
+        let mut index = self
+            .repo
+            .merge_trees(&parent_tree, &self.state, &c_tree, None)?;
+        if index.has_conflicts() {
+            return self.sync(info, Reason::Conflict(conflict_paths(&mut index)?));
+        }
+        self.state = self.repo.find_tree(index.write_tree_to(self.repo)?)?;
         self.steps.push(Step::Pick { commit: info });
         Ok(())
     }
@@ -402,9 +407,10 @@ impl Simulation<'_, '_> {
         Ok(outside)
     }
 
-    /// Record a SYNC step.
+    /// Record a SYNC step and replace the path in the simulated state.
     fn sync(&mut self, info: CommitInfo, reason: Reason) -> Result<(), Error> {
         let entry = repo::path_entry(self.repo, info.id, self.path)?;
+        self.state = replace_entry(self.repo, &self.state, self.path, entry)?;
         self.steps.push(Step::Sync {
             removes_path: entry.is_none(),
             covered: vec![(info.clone(), reason)],
@@ -414,8 +420,83 @@ impl Simulation<'_, '_> {
     }
 }
 
+/// Conflicting paths in a merge index.
+fn conflict_paths(index: &mut Index) -> Result<Vec<String>, Error> {
+    let mut paths = Vec::new();
+    for conflict in index.conflicts()? {
+        let conflict = conflict?;
+        for entry in [conflict.our, conflict.their, conflict.ancestor]
+            .into_iter()
+            .flatten()
+        {
+            paths.push(String::from_utf8_lossy(&entry.path).into_owned());
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
 /// The empty tree, used as the merge ancestor for root commits.
 fn empty_tree(repo: &Repository) -> Result<Tree<'_>, Error> {
     let id = repo.treebuilder(None)?.write()?;
     Ok(repo.find_tree(id)?)
+}
+
+/// Rebuild `tree` with the entry at `path` set to `entry` (or removed when
+/// `entry` is `None`, pruning parent trees that become empty).
+fn replace_entry<'a>(
+    repo: &'a Repository,
+    tree: &Tree<'a>,
+    path: &Path,
+    entry: Option<(Oid, i32)>,
+) -> Result<Tree<'a>, Error> {
+    let components: Vec<String> = path
+        .components()
+        .filter_map(|c| c.as_os_str().to_str().map(str::to_string))
+        .collect();
+    let id = match set_component(repo, Some(tree), &components, entry)? {
+        Some(id) => id,
+        None => repo.treebuilder(None)?.write()?,
+    };
+    Ok(repo.find_tree(id)?)
+}
+
+/// Recursive worker for [`replace_entry`]: returns the new subtree id, or
+/// `None` when the subtree became empty and should be dropped by its parent.
+fn set_component(
+    repo: &Repository,
+    tree: Option<&Tree<'_>>,
+    components: &[String],
+    entry: Option<(Oid, i32)>,
+) -> Result<Option<Oid>, Error> {
+    let Some((name, rest)) = components.split_first() else {
+        return Ok(tree.map(Tree::id));
+    };
+    let mut builder = repo.treebuilder(tree)?;
+    if rest.is_empty() {
+        match entry {
+            Some((id, mode)) => {
+                builder.insert(name, id, mode)?;
+            }
+            None => builder.remove(name)?,
+        }
+    } else {
+        let sub = match tree.and_then(|t| t.get_name(name)) {
+            Some(e) if e.kind() == Some(git2::ObjectType::Tree) => {
+                Some(e.to_object(repo)?.peel_to_tree()?)
+            }
+            _ => None,
+        };
+        match set_component(repo, sub.as_ref(), rest, entry)? {
+            Some(id) => {
+                builder.insert(name, id, i32::from(FileMode::Tree))?;
+            }
+            None => builder.remove(name)?,
+        };
+    }
+    if builder.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(builder.write()?))
 }

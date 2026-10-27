@@ -30,7 +30,7 @@
 ## 5. Simulation and classification
 
 - [x] 5.1 Implement "touches outside the path" via a tree diff, and the shared definition file warning for `pkgs/top-level/`; verify with fixture tests
-- [ ] 5.2 Implement the simulation loop from design decision 6 (`merge_trees` for picks; entry replacement or removal for syncs) and step classification with reasons; verify with fixture tests covering: clean pick, outside-touching sync, conflicting sync, picks continuing after a sync, path deletion
+- [x] 5.2 Implement the simulation loop from design decision 6 (`merge_trees` for picks; entry replacement or removal for syncs) and step classification with reasons; verify with fixture tests covering: clean pick, outside-touching sync, conflicting sync, picks continuing after a sync, path deletion
 - [ ] 5.3 Merge adjacent SYNC steps, and verify the final state against the path at `--to`; verify with unit tests for merged syncs and a fixture in which verification fails (evil merge) and produces an error
 
 ## 6. Rendering

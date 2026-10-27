@@ -1,10 +1,13 @@
-//! Tests for the `git2` fixture builder and repository access.
+//! Tests for repository opening, revision resolution and the read-only
+//! guarantee (mempack).
 
 mod common;
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use common::*;
+use quickpick::plan::{PlanRequest, plan};
 use quickpick::repo;
 
 #[test]
@@ -104,4 +107,80 @@ fn mempack_keeps_written_objects_out_of_the_object_store() {
     let mut after = Vec::new();
     listing(&mut after);
     assert_eq!(before, after);
+}
+
+/// Snapshot of everything `plan` must not modify.
+struct Snapshot {
+    refs: BTreeMap<String, String>,
+    index: Option<Vec<u8>>,
+    workdir: BTreeMap<String, Vec<u8>>,
+    objects: Vec<String>,
+}
+
+fn snapshot(fx: &Fx) -> Snapshot {
+    let repo_dir = fx.dir.path();
+    let git_dir = fx.repo.path().to_path_buf();
+    let mut refs = BTreeMap::new();
+    for r in fx.repo.references().unwrap().flatten() {
+        refs.insert(r.name().unwrap().to_string(), format!("{:?}", r.target()));
+    }
+    let index = std::fs::read(git_dir.join("index")).ok();
+    let mut workdir = BTreeMap::new();
+    collect_files(repo_dir, &git_dir, &mut workdir);
+    let mut objects = Vec::new();
+    collect_paths(&git_dir.join("objects"), &mut objects);
+    Snapshot {
+        refs,
+        index,
+        workdir,
+        objects,
+    }
+}
+
+fn collect_files(dir: &Path, git_dir: &Path, out: &mut BTreeMap<String, Vec<u8>>) {
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let p = e.path();
+        if p == *git_dir {
+            continue;
+        }
+        if p.is_dir() {
+            collect_files(&p, git_dir, out);
+        } else {
+            out.insert(
+                p.strip_prefix(dir).unwrap().to_string_lossy().into_owned(),
+                std::fs::read(&p).unwrap(),
+            );
+        }
+    }
+}
+
+#[test]
+fn planning_leaves_the_repository_untouched() {
+    let History { fx, .. } = history();
+    // Add an outside-touching commit so the plan contains a SYNC too.
+    let c4 = fx.commit(
+        &[fx.oid("master")],
+        &[w("pkg/file", "v5"), w("other", "o2")],
+        "pkg: v4 -> v5 + outside",
+    );
+    fx.branch("master", c4);
+
+    let before = snapshot(&fx);
+    let plan = plan(
+        &fx.repo,
+        &PlanRequest {
+            path: "pkg".into(),
+            source: "master".into(),
+            onto: "onto".into(),
+            from: None,
+            to: None,
+        },
+    )
+    .unwrap();
+    let after = snapshot(&fx);
+    assert_eq!(before.refs, after.refs);
+    assert_eq!(before.index, after.index);
+    assert_eq!(before.workdir, after.workdir);
+    assert_eq!(before.objects, after.objects);
+    assert!(plan.verified);
 }

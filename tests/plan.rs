@@ -1,4 +1,5 @@
-//! Tests for path entry/touches, and range and anchor detection.
+//! Tests for path entry/touches, range and anchor detection, step
+//! classification, sync merging and verification.
 
 mod common;
 
@@ -17,6 +18,16 @@ fn request(path: &str) -> PlanRequest {
         from: None,
         to: None,
     }
+}
+
+fn step_ids(p: &quickpick::plan::Plan) -> Vec<git2::Oid> {
+    p.steps
+        .iter()
+        .map(|s| match s {
+            Step::Pick { commit } => commit.id,
+            Step::Sync { target, .. } => target.id,
+        })
+        .collect()
 }
 
 #[test]
@@ -54,12 +65,18 @@ fn filemode_only_change_counts_as_a_touch() {
 // ---- 4.2 anchor and bounded walk ----
 
 #[test]
-fn anchor_found_and_range_walked() {
+fn anchor_found_and_range_planned() {
     let History { fx, c1, c2, c3, .. } = history();
     let p = plan(&fx.repo, &request("pkg")).unwrap();
     assert_eq!(p.anchor, Some(c1));
     assert_eq!(p.to, c3);
-    assert_eq!(p.range, vec![c2, c3]);
+    assert!(p.verified);
+    assert_eq!(step_ids(&p), vec![c2, c3]);
+    assert!(
+        p.steps.iter().all(|s| matches!(s, Step::Pick { .. })),
+        "expected all picks: {:?}",
+        p.steps
+    );
 }
 
 #[test]
@@ -72,7 +89,7 @@ fn anchor_at_the_merge_base() {
     fx.branch("onto", ot2);
     let p = plan(&fx.repo, &request("pkg")).unwrap();
     assert_eq!(p.anchor, Some(mb));
-    assert_eq!(p.range, vec![c1, c2, c3]);
+    assert_eq!(step_ids(&p), vec![c1, c2, c3]);
 }
 
 #[test]
@@ -114,7 +131,8 @@ fn merge_commits_are_skipped_but_their_commits_are_walked() {
     fx.branch("onto", ot);
 
     let p = plan(&fx.repo, &request("pkg")).unwrap();
-    let mut ids = p.range;
+    assert!(p.verified);
+    let mut ids = step_ids(&p);
     ids.sort();
     let mut expected = vec![c2, s1, c3];
     expected.sort();
@@ -134,7 +152,7 @@ fn usage_error_on_bad_path() {
     // Trailing slash is normalized away.
     let mut req = request("pkg/");
     req.path = "pkg/".into();
-    plan(&fx.repo, &req).unwrap();
+    assert!(plan(&fx.repo, &req).unwrap().verified);
 }
 
 // ---- 4.3 range ends ----
@@ -158,7 +176,7 @@ fn explicit_to_is_respected() {
     req.to = Some(c2.to_string());
     let p = plan(&fx.repo, &req).unwrap();
     assert_eq!(p.to, c2);
-    assert_eq!(p.range, vec![c2]);
+    assert_eq!(step_ids(&p), vec![c2]);
 }
 
 #[test]
@@ -167,7 +185,7 @@ fn explicit_from_is_inclusive() {
     let mut req = request("pkg");
     req.from = Some(c2.to_string());
     let p = plan(&fx.repo, &req).unwrap();
-    assert_eq!(p.range, vec![c2, c3]);
+    assert_eq!(step_ids(&p), vec![c2, c3]);
     assert_eq!(
         p.anchor,
         Some(fx.repo.find_commit(c2).unwrap().parent_id(0).unwrap())
@@ -184,9 +202,9 @@ fn from_not_an_ancestor_of_to_errors() {
 }
 
 #[test]
-fn from_mismatch_warns() {
+fn from_mismatch_warns_and_conflicts_to_sync() {
     // onto's path disagrees with the content just before --from.
-    let History { fx, mb, c2, .. } = history();
+    let History { fx, mb, c2, c3, .. } = history();
     let ot = fx.commit(&[mb], &[w("pkg/file", "vX")], "target diverged");
     fx.branch("onto", ot);
     let mut req = request("pkg");
@@ -197,6 +215,22 @@ fn from_mismatch_warns() {
         "warnings: {:?}",
         p.warnings
     );
+    // pkg/file is a single line: target's "vX" vs c2's "v3" both changed
+    // it relative to c1's "v2" — c2 conflicts, c3 picks on top of the sync.
+    match &p.steps[..] {
+        [
+            Step::Sync {
+                covered, target, ..
+            },
+            Step::Pick { commit },
+        ] => {
+            assert!(matches!(covered[0].1, Reason::Conflict(_)));
+            assert_eq!(target.id, c2);
+            assert_eq!(commit.id, c3);
+        }
+        other => panic!("unexpected steps: {other:?}"),
+    }
+    assert!(p.verified);
 }
 
 // ---- 5.1 outside paths and shared-definition warnings ----
@@ -243,4 +277,28 @@ fn outside_touching_commit_syncs_with_paths_and_warns() {
         "warnings: {:?}",
         p.warnings
     );
+}
+
+// ---- 5.2 classification ----
+
+#[test]
+fn path_deletion_in_a_sync_removes_the_path() {
+    let History { fx, c1, .. } = history();
+    let del = fx.commit(&[c1], &[d("pkg"), w("other", "o2")], "remove pkg + outside");
+    fx.branch("master", del);
+    let p = plan(&fx.repo, &request("pkg")).unwrap();
+    match &p.steps[..] {
+        [
+            Step::Sync {
+                removes_path,
+                target,
+                ..
+            },
+        ] => {
+            assert!(*removes_path);
+            assert_eq!(target.id, del);
+        }
+        other => panic!("unexpected steps: {other:?}"),
+    }
+    assert!(p.verified);
 }
