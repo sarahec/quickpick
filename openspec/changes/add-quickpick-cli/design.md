@@ -49,7 +49,7 @@ src/
 - **Settings struct:** a `#[derive(clapfig::Schema)]` struct holds `repo: Option<PathBuf>`, `source` (default `"master"`), `onto: Option<String>`, `vcs: Vcs` (default `git`), and `branch: Option<String>`. `Vcs` is a unit-only enum, so clapfig itself rejects values other than `git` and `jujutsu` and lists the allowed set.
 - **Layers:** CLI flags are applied as clapfig's `cli_override` layer, the environment prefix is `QUICKPICK`, and the file is `quickpick.toml` in the platform config directory. That gives exactly the precedence the spec requires.
 - **Required target:** `onto` is checked after loading, so the error message can name all three ways to set it.
-- **Version caveat:** clapfig 0.21.4 is pinned, but the API above was read from the 0.26 documentation. The first task verifies the 0.21.4 API and runs `cargo add clapfig@<version>` if an upgrade is needed.
+- **Version used:** clapfig is pinned at `=0.25.0` — the newest release implementing the `Schema`-derive API described here that was published at least a week ago (0.26.0 is newer but too fresh).
 
 *Alternative considered:* clap's built-in `env = "..."` attribute. It covers flags and environment variables, but not the config file the `configure` subcommand manages, and it would duplicate defaults in two places.
 
