@@ -27,7 +27,7 @@ pub fn run(cli: Cli) -> Result<(), Error> {
     }
     let (repo, plan, settings) = load_plan(&cli)?;
     if cli.explain {
-        print!("{}", render::propose::render(&plan, settings.vcs));
+        print!("{}", render::explain::render(&plan, settings.vcs));
         return Ok(());
     }
     if cli.summary {

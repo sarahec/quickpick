@@ -26,6 +26,39 @@ fn explain_and_script_report_the_same_steps() {
 }
 
 #[test]
+fn summary_is_a_condensed_plan() {
+    let h = history();
+    let (out, _h) = qp(&[history_args(&h), vec!["--summary".into()]].concat());
+    assert!(out.status.success(), "{}", stderr(&out));
+    let s = stdout(&out);
+    for (i, id) in [&h.c2, &h.c3].iter().enumerate() {
+        let id = id.to_string();
+        assert!(
+            s.contains(&format!("  {}. PICK {}", i + 1, &id[..7])),
+            "{s}"
+        );
+    }
+    assert!(s.contains("verification: OK"), "{s}");
+    // Condensed: no author dates, commit summaries or covered-commit detail.
+    assert!(!s.contains("2023"), "{s}");
+    assert!(!s.contains("covers"), "{s}");
+    assert!(!s.contains("pkg: v"), "{s}");
+}
+
+#[test]
+fn explain_and_summary_conflict() {
+    let h = history();
+    let (out, _h) = qp(&[
+        "--repo",
+        &h.fx.dir.path().to_string_lossy(),
+        "--explain",
+        "--summary",
+        "pkg",
+    ]);
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+}
+
+#[test]
 fn nothing_to_do_exits_zero_with_empty_script_stdout() {
     let History { fx, mb, c3, .. } = history();
     let ot = fx.commit(&[mb], &[w("pkg/file", "v4")], "target in sync");

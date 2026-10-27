@@ -1,9 +1,9 @@
 //! Plan renderers: human-readable output and the git/jujutsu script dialects.
 
+pub mod explain;
 pub mod git;
 pub mod jj;
 pub mod message;
-pub mod propose;
 pub mod summary;
 
 use git2::Oid;

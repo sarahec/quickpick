@@ -1,4 +1,4 @@
-//! Renders a plan as a human-readable explanation (`qp propose`).
+//! Renders a plan as a human-readable explanation (`--explain`).
 
 use std::fmt::Write;
 
@@ -7,8 +7,8 @@ use crate::plan::{Plan, Step};
 use crate::render::message::reason_text;
 use crate::render::{author_date, short};
 
-/// The `propose` output for `plan`. Warnings are not included; the caller
-/// sends them to stderr.
+/// The `--explain` output for `plan`. Warnings are not included; the
+/// caller sends them to stderr.
 pub fn render(plan: &Plan, vcs: Vcs) -> String {
     let mut out = format!(
         "source:  {} ({})\ntarget:  {} ({})\npath:    {}\n",
