@@ -1,0 +1,19 @@
+{ self }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+let
+  system = pkgs.stdenv.hostPlatform.system;
+  package = self.packages.${system}.quickpick;
+  cfg = config.programs.quickpick;
+in
+{
+  options = import ./options.nix { inherit lib package; };
+
+  config = lib.mkIf cfg.enable {
+    home.packages = [ cfg.package ];
+  };
+}
