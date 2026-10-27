@@ -19,8 +19,10 @@ devenv.local.yaml
 # rust
 target
 rust/**/target
-Cargo.lock
+# Cargo.lock
 
 # Darwin
 .DS_Store
 
+# nix
+result
