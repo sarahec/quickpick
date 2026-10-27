@@ -136,3 +136,65 @@ fn usage_error_on_bad_path() {
     req.path = "pkg/".into();
     plan(&fx.repo, &req).unwrap();
 }
+
+// ---- 4.3 range ends ----
+
+#[test]
+fn explicit_to_not_on_source_errors() {
+    let History { fx, ot, .. } = history();
+    let mut req = request("pkg");
+    req.to = Some(ot.to_string());
+    let err = plan(&fx.repo, &req).unwrap_err();
+    assert!(
+        err.to_string().contains("not a commit on the source"),
+        "{err}"
+    );
+}
+
+#[test]
+fn explicit_to_is_respected() {
+    let History { fx, c2, .. } = history();
+    let mut req = request("pkg");
+    req.to = Some(c2.to_string());
+    let p = plan(&fx.repo, &req).unwrap();
+    assert_eq!(p.to, c2);
+    assert_eq!(p.range, vec![c2]);
+}
+
+#[test]
+fn explicit_from_is_inclusive() {
+    let History { fx, c2, c3, .. } = history();
+    let mut req = request("pkg");
+    req.from = Some(c2.to_string());
+    let p = plan(&fx.repo, &req).unwrap();
+    assert_eq!(p.range, vec![c2, c3]);
+    assert_eq!(
+        p.anchor,
+        Some(fx.repo.find_commit(c2).unwrap().parent_id(0).unwrap())
+    );
+}
+
+#[test]
+fn from_not_an_ancestor_of_to_errors() {
+    let History { fx, ot, .. } = history();
+    let mut req = request("pkg");
+    req.from = Some(ot.to_string());
+    let err = plan(&fx.repo, &req).unwrap_err();
+    assert!(err.to_string().contains("not an ancestor of --to"), "{err}");
+}
+
+#[test]
+fn from_mismatch_warns() {
+    // onto's path disagrees with the content just before --from.
+    let History { fx, mb, c2, .. } = history();
+    let ot = fx.commit(&[mb], &[w("pkg/file", "vX")], "target diverged");
+    fx.branch("onto", ot);
+    let mut req = request("pkg");
+    req.from = Some(c2.to_string());
+    let p = plan(&fx.repo, &req).unwrap();
+    assert!(
+        p.warnings.iter().any(|w| w.contains("--from")),
+        "warnings: {:?}",
+        p.warnings
+    );
+}

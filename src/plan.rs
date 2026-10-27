@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use git2::{Oid, Repository, Sort};
+use git2::{Commit, Oid, Repository, Sort};
 
 use crate::error::Error;
 use crate::repo;
@@ -129,18 +129,16 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
         ))
     })?;
 
-    let warnings = Vec::new();
-    if req.from.is_some() {
-        return Err(Error::Planning(
-            "explicit --from is not supported yet".into(),
-        ));
-    }
-    let anchor = detect_anchor(repo, to, mb, target, &path, req)?;
+    let mut warnings = Vec::new();
+    let (anchor, from) = match &req.from {
+        Some(rev) => explicit_from(repo, rev, to, target, &path, &mut warnings)?,
+        None => (detect_anchor(repo, to, mb, target, &path, req)?, None),
+    };
 
-    let range = range_walk(repo, to, anchor, None, &path)?;
+    let range = range_walk(repo, to, anchor, from, &path)?;
 
     // `from` is the first commit of the range for reporting purposes.
-    let from_oid = range.first().copied();
+    let from_oid = from.or(range.first().copied());
     Ok(Plan {
         source_rev: req.source.clone(),
         onto_rev: req.onto.clone(),
@@ -181,7 +179,14 @@ fn resolve_to(
     path: &Path,
 ) -> Result<Oid, Error> {
     if let Some(rev) = &req.to {
-        return repo::resolve(repo, rev, "--to");
+        let to = repo::resolve(repo, rev, "--to")?;
+        if to != source && !repo.graph_descendant_of(source, to)? {
+            return Err(Error::Planning(format!(
+                "--to '{rev}' is not a commit on the source '{}'",
+                req.source
+            )));
+        }
+        return Ok(to);
     }
     let mut walk = repo.revwalk()?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)?;
@@ -199,6 +204,40 @@ fn resolve_to(
         "path '{}' is not found on the source '{}' (a shallow clone may be missing its history)",
         req.path, req.source
     )))
+}
+
+/// Handle an explicit `--from`: check ancestry, warn on anchor mismatch and
+/// return the anchor stand-in (the commit's first parent) plus the range
+/// start.
+fn explicit_from(
+    repo: &Repository,
+    rev: &str,
+    to: Oid,
+    target: Option<(Oid, i32)>,
+    path: &Path,
+    warnings: &mut Vec<String>,
+) -> Result<(Oid, Option<Oid>), Error> {
+    let from = repo::resolve(repo, rev, "--from")?;
+    if from != to && !repo.graph_descendant_of(to, from)? {
+        return Err(Error::Planning(format!(
+            "--from '{rev}' is not an ancestor of --to"
+        )));
+    }
+    let c = repo.find_commit(from)?;
+    let parent = c.parent(0).ok();
+    let base = parent.as_ref().map(Commit::id).unwrap_or(from);
+    let parent_entry = match &parent {
+        Some(p) => repo::path_entry(repo, p.id(), path)?,
+        None => None,
+    };
+    if parent_entry != target {
+        warnings.push(format!(
+            "--from '{rev}' does not continue the target's state: the path content just before \
+             {short} differs from the target; the plan may not apply cleanly",
+            short = &from.to_string()[..7]
+        ));
+    }
+    Ok((base, Some(from)))
 }
 
 /// Find the anchor: the newest path-touching candidate whose content equals

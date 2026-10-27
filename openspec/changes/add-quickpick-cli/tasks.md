@@ -25,7 +25,7 @@
 
 - [x] 4.1 Implement path entry lookup and "touches the path" by comparing entry IDs with the first parent; verify with unit tests for files, directories and absent paths
 - [x] 4.2 Implement the bounded candidate walk and anchor search from design decision 5, including merge-commit skipping, the merge-base check and oldest-first ordering; verify with fixture tests for: anchor found, no anchor, target already in sync, anchor at the merge base
-- [ ] 4.3 Implement the `--to` default and validation (on source), the `--from` default (first after the anchor), inclusive `--from`, the ancestry check, and the warning when the explicit `--from` doesn't match the target; verify with fixture tests for each scenario in the spec's range requirements
+- [x] 4.3 Implement the `--to` default and validation (on source), the `--from` default (first after the anchor), inclusive `--from`, the ancestry check, and the warning when the explicit `--from` doesn't match the target; verify with fixture tests for each scenario in the spec's range requirements
 
 ## 5. Simulation and classification
 
