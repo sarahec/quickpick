@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 use clapfig::ConfigArgs;
+use serde::Serialize;
 
 use crate::config::Vcs;
 
@@ -35,9 +36,14 @@ pub enum Commands {
 }
 
 /// Planning options shared by `propose` and `generate`.
-#[derive(Args, Debug)]
+///
+/// The `repo`, `source`, `onto`, `vcs` and `branch` fields double as the
+/// clapfig CLI-override layer; `from`, `to` and `path` are planning inputs
+/// only and are ignored by [`clapfig`]'s schema matching.
+#[derive(Args, Serialize, Debug)]
 pub struct PlanArgs {
     /// Repository-relative path to a file or directory.
+    #[serde(skip_serializing)]
     pub path: PathBuf,
     /// Target revision to bring the path onto (required unless configured).
     #[arg(long)]
@@ -47,9 +53,11 @@ pub struct PlanArgs {
     pub source: Option<String>,
     /// First source commit to copy (inclusive); defaults to just after the anchor.
     #[arg(long)]
+    #[serde(skip_serializing)]
     pub from: Option<String>,
     /// Last source commit to copy; defaults to the newest commit touching the path.
     #[arg(long)]
+    #[serde(skip_serializing)]
     pub to: Option<String>,
     /// Script dialect.
     #[arg(long, value_enum)]

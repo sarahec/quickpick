@@ -1,5 +1,7 @@
 //! `qp` executable: thin wrapper around the `quickpick` library.
 
 fn main() {
-    quickpick::run(quickpick::parse());
+    if let Err(e) = quickpick::run(quickpick::parse()) {
+        eprintln!("qp: {e}");
+    }
 }
