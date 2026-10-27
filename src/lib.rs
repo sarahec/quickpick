@@ -26,7 +26,7 @@ pub fn run(cli: Cli) -> Result<(), Error> {
         }
         Commands::Propose(args) | Commands::Generate(args) => {
             let _settings = config::load(&args)?;
-            Ok(())
+            Err(Error::Planning("planning is not implemented yet".into()))
         }
     }
 }

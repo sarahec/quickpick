@@ -1,7 +1,13 @@
 //! `qp` executable: thin wrapper around the `quickpick` library.
 
-fn main() {
-    if let Err(e) = quickpick::run(quickpick::parse()) {
-        eprintln!("qp: {e}");
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    match quickpick::run(quickpick::parse()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("qp: {e}");
+            ExitCode::from(e.exit_code() as u8)
+        }
     }
 }

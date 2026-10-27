@@ -13,7 +13,7 @@
 - [x] 2.2 Add visible aliases `p` (propose), `g` (generate), and `c` plus `config` (configure); verify with unit tests that each alias parses to the same command as its full name, and that `qp --help` output lists the aliases
 - [x] 2.3 Define the clapfig settings struct (`repo`, `source` defaulting to `master`, `onto`, `vcs` as a `git`/`jujutsu` enum defaulting to `git`, `branch`) with `QUICKPICK` as the env prefix and `quickpick.toml` as the file; verify with unit tests the precedence flag > env > file > default, and that an invalid `vcs` lists the allowed values
 - [x] 2.4 Report a missing `onto` with a message naming the flag, `QUICKPICK__ONTO` and the config key; verify with a unit test
-- [ ] 2.5 Implement `Error` with human-readable `Display` and the exit-code mapping from design decision 8 (0 / 1 / 2); write errors to stderr; verify with unit tests on the mapping
+- [x] 2.5 Implement `Error` with human-readable `Display` and the exit-code mapping from design decision 8 (0 / 1 / 2); write errors to stderr; verify with unit tests on the mapping
 
 ## 3. Repository access
 
