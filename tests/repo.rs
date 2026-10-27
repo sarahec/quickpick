@@ -65,3 +65,43 @@ fn source_master_does_not_fall_back_to_remotes() {
     let err = repo::resolve(&fx.repo, "master", "--source").unwrap_err();
     assert!(err.to_string().contains("master"), "{err}");
 }
+
+/// Collect all file paths under `dir`, relative to `dir`, sorted.
+fn collect_paths(dir: &Path, out: &mut Vec<String>) {
+    collect_paths_under(dir, dir, out);
+    out.sort();
+}
+
+fn collect_paths_under(root: &Path, dir: &Path, out: &mut Vec<String>) {
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            collect_paths_under(root, &p, out);
+        } else {
+            out.push(p.strip_prefix(root).unwrap().to_string_lossy().into_owned());
+        }
+    }
+}
+
+#[test]
+fn mempack_keeps_written_objects_out_of_the_object_store() {
+    let fx = Fx::new();
+    fx.commit(&[], &[w("f", "x")], "c");
+    let objects = fx.repo.path().join("objects");
+    let listing = |out: &mut Vec<String>| collect_paths(&objects, out);
+
+    let mut before = Vec::new();
+    listing(&mut before);
+
+    repo::install_mempack(&fx.repo).unwrap();
+    // Write a tree object through the odb; it must land in the mempack
+    // backend, not on disk.
+    let blob = fx.repo.blob(b"in-memory only").unwrap();
+    let mut builder = fx.repo.treebuilder(None).unwrap();
+    builder.insert("f", blob, 0o100644).unwrap();
+    builder.write().unwrap();
+
+    let mut after = Vec::new();
+    listing(&mut after);
+    assert_eq!(before, after);
+}

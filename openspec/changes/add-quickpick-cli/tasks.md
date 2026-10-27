@@ -19,7 +19,7 @@
 
 - [x] 3.1 Add a test fixture builder (under `tests/` or a `#[cfg(test)]` module) that creates a temporary git repository with configurable source and target branches, in-path commits, outside-touching commits, conflicting commits, merge commits and path deletions; verify with a self-test that builds every fixture shape
 - [x] 3.2 Implement repository opening (`repo` setting or cwd), revision resolution for `source`/`onto`/`from`/`to`, and the "not a git repository" and "unresolved revision" errors, including `source` defaulting to exactly `master` with no remote fallback; verify with fixture tests
-- [ ] 3.3 Install the mempack object-database backend before any write (design decision 3); verify with a test that planning leaves the refs, index, working tree and the `.git/objects` file listing unchanged, or apply the documented fallback and adjust that test
+- [x] 3.3 Install the mempack object-database backend before any write (design decision 3); verify with a test that planning leaves the refs, index, working tree and the `.git/objects` file listing unchanged, or apply the documented fallback and adjust that test
 
 ## 4. Range and anchor
 
