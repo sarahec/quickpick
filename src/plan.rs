@@ -1,7 +1,7 @@
 //! Planning: range and anchor detection, step classification, sync merging
 //! and plan verification.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use git2::{Commit, FileMode, Index, Oid, Repository, Sort, Tree};
@@ -122,7 +122,8 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
     let source = repo::resolve(repo, &req.source, "--source")?;
     let target = repo::path_entry(repo, onto, &path)?;
 
-    let to = resolve_to(repo, req, source, &path)?;
+    let mut entries = HashMap::new();
+    let to = resolve_to(repo, req, source, &path, &mut entries)?;
     let to_entry = repo::path_entry(repo, to, &path)?;
     if to_entry == target {
         return Ok(Plan {
@@ -150,10 +151,13 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
     let mut warnings = Vec::new();
     let (anchor, from) = match &req.from {
         Some(rev) => explicit_from(repo, rev, to, target, &path, &mut warnings)?,
-        None => (detect_anchor(repo, to, mb, target, &path, req)?, None),
+        None => (
+            detect_anchor(repo, to, mb, target, &path, req, &mut entries)?,
+            None,
+        ),
     };
 
-    let range = range_walk(repo, to, anchor, from, &path)?;
+    let range = range_walk(repo, to, anchor, from, &path, &mut entries)?;
 
     let mut sim = Simulation {
         repo,
@@ -208,12 +212,50 @@ fn under(path: &Path, p: &Path) -> bool {
     p == path || p.starts_with(path)
 }
 
+/// Memoized `path_entry`: history walks revisit each commit and its parents
+/// many times, so each commit's entry is computed at most once per `plan()`.
+type Entries = HashMap<Oid, Option<(Oid, i32)>>;
+
+fn cached_entry(
+    repo: &Repository,
+    cache: &mut Entries,
+    commit: Oid,
+    path: &Path,
+) -> Result<Option<(Oid, i32)>, Error> {
+    match cache.get(&commit) {
+        Some(e) => Ok(*e),
+        None => {
+            let e = repo::path_entry(repo, commit, path)?;
+            cache.insert(commit, e);
+            Ok(e)
+        }
+    }
+}
+
+/// [`repo::touches`] against the [`Entries`] cache: the parent's entry is a
+/// cache lookup, so an already-seen parent costs no tree descent.
+fn touches_cached(
+    repo: &Repository,
+    cache: &mut Entries,
+    commit: &Commit<'_>,
+    path: &Path,
+) -> Result<bool, Error> {
+    let cur = cached_entry(repo, cache, commit.id(), path)?;
+    let parent = if commit.parent_count() == 0 {
+        None
+    } else {
+        cached_entry(repo, cache, commit.parent_id(0)?, path)?
+    };
+    Ok(cur != parent)
+}
+
 /// Resolve `--to`, or find the newest non-merge source commit touching `path`.
 fn resolve_to(
     repo: &Repository,
     req: &PlanRequest,
     source: Oid,
     path: &Path,
+    entries: &mut Entries,
 ) -> Result<Oid, Error> {
     if let Some(rev) = &req.to {
         let to = repo::resolve(repo, rev, "--to")?;
@@ -233,7 +275,7 @@ fn resolve_to(
         if c.parent_count() > 1 {
             continue;
         }
-        if repo::touches(&c, path)? {
+        if touches_cached(repo, entries, &c, path)? {
             return Ok(c.id());
         }
     }
@@ -286,6 +328,7 @@ fn detect_anchor(
     target: Option<(Oid, i32)>,
     path: &Path,
     req: &PlanRequest,
+    entries: &mut Entries,
 ) -> Result<Oid, Error> {
     let mut walk = repo.revwalk()?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)?;
@@ -294,10 +337,10 @@ fn detect_anchor(
     for id in walk {
         let id = id?;
         let c = repo.find_commit(id)?;
-        if c.parent_count() > 1 || !repo::touches(&c, path)? {
+        if c.parent_count() > 1 || !touches_cached(repo, entries, &c, path)? {
             continue;
         }
-        if repo::path_entry(repo, id, path)? == target {
+        if cached_entry(repo, entries, id, path)? == target {
             return Ok(id);
         }
     }
@@ -319,6 +362,7 @@ fn range_walk(
     anchor: Oid,
     from: Option<Oid>,
     path: &Path,
+    entries: &mut Entries,
 ) -> Result<Vec<Oid>, Error> {
     let mut walk = repo.revwalk()?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::REVERSE)?;
@@ -334,7 +378,7 @@ fn range_walk(
     let mut range = Vec::new();
     for id in walk {
         let c = repo.find_commit(id?)?;
-        if c.parent_count() > 1 || !repo::touches(&c, path)? {
+        if c.parent_count() > 1 || !touches_cached(repo, entries, &c, path)? {
             continue;
         }
         range.push(c.id());
@@ -365,6 +409,18 @@ impl Simulation<'_, '_> {
         let info = CommitInfo::of(self.repo, commit.id())?;
         if !outside.is_empty() {
             return self.sync(info, Reason::OutsidePaths(outside));
+        }
+        // The commit only changes `<path>`; when `<path>` is a directory in
+        // all three trees, merging the `<path>` subtrees is equivalent to
+        // merging whole trees and much cheaper on big repos.
+        let is_dir = |t: &Tree<'_>| -> Result<bool, Error> {
+            Ok(match repo::tree_entry(t, self.path)? {
+                Some((_, mode)) => mode == i32::from(FileMode::Tree),
+                None => true,
+            })
+        };
+        if is_dir(&parent_tree)? && is_dir(&self.state)? && is_dir(&c_tree)? {
+            return self.pick_subtree(info, &parent_tree, &c_tree);
         }
         let mut index = self
             .repo
@@ -410,6 +466,47 @@ impl Simulation<'_, '_> {
         outside.sort();
         outside.dedup();
         Ok(outside)
+    }
+
+    /// Merge the `<path>` subtrees of `parent`/`state`/`commit` and graft the
+    /// result back into `state` — valid because the commit changes nothing
+    /// outside `<path>`.
+    fn pick_subtree(
+        &mut self,
+        info: CommitInfo,
+        parent_tree: &Tree<'_>,
+        c_tree: &Tree<'_>,
+    ) -> Result<(), Error> {
+        let sub = |t: &Tree<'_>| -> Result<Tree<'_>, Error> {
+            match repo::tree_entry(t, self.path)? {
+                Some((id, _)) => Ok(self.repo.find_tree(id)?),
+                None => empty_tree(self.repo),
+            }
+        };
+        let mut index =
+            self.repo
+                .merge_trees(&sub(parent_tree)?, &sub(&self.state)?, &sub(c_tree)?, None)?;
+        if index.has_conflicts() {
+            return self.sync(info, Reason::Conflict(self.conflict_paths(&mut index)?));
+        }
+        let merged = index.write_tree_to(self.repo)?;
+        let entry = if self.repo.find_tree(merged)?.is_empty() {
+            None
+        } else {
+            Some((merged, i32::from(FileMode::Tree)))
+        };
+        self.state = replace_entry(self.repo, &self.state, self.path, entry)?;
+        self.steps.push(Step::Pick { commit: info });
+        Ok(())
+    }
+
+    /// Conflicting paths in the subtree merge index, reported relative to
+    /// the repository root (the index is rooted at `<path>`).
+    fn conflict_paths(&self, index: &mut Index) -> Result<Vec<String>, Error> {
+        Ok(conflict_paths(index)?
+            .into_iter()
+            .map(|p| self.path.join(p).to_string_lossy().into_owned())
+            .collect())
     }
 
     /// Record a SYNC step and replace the path in the simulated state.
@@ -583,4 +680,55 @@ fn differing_files(
         }
     }
     Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::{Signature, Time};
+
+    /// `touches_cached` must agree with the simple `repo::touches` definition
+    /// on file, directory, absent-path and filemode-only cases.
+    #[test]
+    fn cached_touches_matches_touches() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let sig = Signature::new("t", "t@x", &Time::new(1_700_000_000, 0)).unwrap();
+        let commit = |parents: &[Oid], files: &[(&str, &str, i32)]| -> Oid {
+            let mut b = repo.treebuilder(None).unwrap();
+            for (name, content, mode) in files {
+                let id = repo.blob(content.as_bytes()).unwrap();
+                b.insert(name, id, *mode).unwrap();
+            }
+            let tree = b.write().unwrap();
+            let parents: Vec<Commit> = parents
+                .iter()
+                .map(|id| repo.find_commit(*id).unwrap())
+                .collect();
+            let refs: Vec<&Commit> = parents.iter().collect();
+            repo.commit(None, &sig, &sig, "c", &repo.find_tree(tree).unwrap(), &refs)
+                .unwrap()
+        };
+        let base = commit(&[], &[("f", "x", i32::from(FileMode::Blob))]);
+        let changed = commit(&[base], &[("f", "y", i32::from(FileMode::Blob))]);
+        let mode = commit(
+            &[changed],
+            &[("f", "x", i32::from(FileMode::BlobExecutable))],
+        );
+        let gone = commit(&[mode], &[]);
+        // The cache keys on the commit id alone, so each planned path gets
+        // its own pass — as in `plan()`. Walking the chain newest-first
+        // exercises cache hits on already-seen parents.
+        for path in ["f", "missing"] {
+            let mut cache = Entries::new();
+            for id in [gone, mode, changed, base] {
+                let c = repo.find_commit(id).unwrap();
+                assert_eq!(
+                    repo::touches(&c, Path::new(path)).unwrap(),
+                    touches_cached(&repo, &mut cache, &c, Path::new(path)).unwrap(),
+                    "{id} {path}"
+                );
+            }
+        }
+    }
 }
