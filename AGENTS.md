@@ -62,3 +62,9 @@ Before submitting changes, ensure the following all pass:
 - Add dependencies with `cargo add <crate>` rather than editing `Cargo.toml` by hand.
 - `Cargo.lock` is **gitignored** (library crate convention). Do not commit it.
 - Environment variables are loaded from `.env` (gitignored). Do not commit secrets.
+
+## Version control (Jujutsu)
+
+- The repo is jj colocated with git. Keep a clear history: each numbered subtask in an OpenSpec `tasks.md` (e.g. `2.3`) gets its own jj change containing all and only that subtask's changes, including its `tasks.md` checkbox. Use conventional commit messages (`<type>(<task>): <description>`). Subtask commits don't need approval.
+- At the end of each parent task (e.g. all of group `2.`), stop and ask the user to review that group's commits before starting the next group.
+- Don't mix unrelated work in one change. Don't move bookmarks or push unless asked.
