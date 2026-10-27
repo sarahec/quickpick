@@ -7,7 +7,7 @@ use std::path::Path;
 
 use common::*;
 use quickpick::error::Error;
-use quickpick::plan::{PlanRequest, Reason, Step, plan};
+use quickpick::plan::{PlanRequest, Range, Reason, Step, plan};
 use quickpick::repo;
 
 fn request(path: &str) -> PlanRequest {
@@ -15,8 +15,7 @@ fn request(path: &str) -> PlanRequest {
         path: path.into(),
         source: "master".into(),
         onto: "onto".into(),
-        from: None,
-        to: None,
+        range: Range::default(),
     }
 }
 
@@ -95,14 +94,14 @@ fn anchor_at_the_merge_base() {
 }
 
 #[test]
-fn no_anchor_errors_without_from() {
+fn no_anchor_errors_without_a_range_start() {
     let History { fx, mb, .. } = history();
     let ot = fx.commit(&[mb], &[w("pkg/file", "stray")], "target diverged");
     fx.branch("onto", ot);
     let err = plan(&fx.repo, &request("pkg")).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("no common state"), "{msg}");
-    assert!(msg.contains("--from"), "{msg}");
+    assert!(msg.contains("--range"), "{msg}");
 }
 
 #[test]
@@ -144,10 +143,11 @@ fn merge_commits_are_skipped_but_their_commits_are_walked() {
 // ---- 4.3 range ends ----
 
 #[test]
-fn explicit_to_not_on_source_errors() {
+fn range_end_not_on_source_errors() {
     let History { fx, ot, .. } = history();
     let mut req = request("pkg");
-    req.to = Some(ot.to_string());
+    // A bare-commit `b` must be reachable from the source line.
+    req.range.end = Some(ot.to_string());
     let err = plan(&fx.repo, &req).unwrap_err();
     assert!(
         err.to_string().contains("not a commit on the source"),
@@ -156,48 +156,60 @@ fn explicit_to_not_on_source_errors() {
 }
 
 #[test]
-fn explicit_to_is_respected() {
+fn explicit_range_end_is_respected() {
     let History { fx, c2, .. } = history();
     let mut req = request("pkg");
-    req.to = Some(c2.to_string());
+    req.range.end = Some(c2.to_string());
     let p = plan(&fx.repo, &req).unwrap();
     assert_eq!(p.to, c2);
     assert_eq!(step_ids(&p), vec![c2]);
 }
 
 #[test]
-fn explicit_from_is_inclusive() {
-    let History { fx, c2, c3, .. } = history();
+fn explicit_range_start_is_exclusive() {
+    let History { fx, c1, c2, c3, .. } = history();
     let mut req = request("pkg");
-    req.from = Some(c2.to_string());
+    req.range.start = Some(c1.to_string());
     let p = plan(&fx.repo, &req).unwrap();
     assert_eq!(step_ids(&p), vec![c2, c3]);
-    assert_eq!(
-        p.anchor,
-        Some(fx.repo.find_commit(c2).unwrap().parent_id(0).unwrap())
-    );
+    assert_eq!(p.anchor, Some(c1));
 }
 
 #[test]
-fn from_not_an_ancestor_of_to_errors() {
-    let History { fx, ot, .. } = history();
+fn range_start_not_an_ancestor_of_end_still_plans() {
+    // `a` need not be an ancestor of `b`: `onto..master` selects the
+    // path-touching commits reachable from master but not from onto.
+    let History {
+        fx, c1, c2, c3, ot, ..
+    } = history();
     let mut req = request("pkg");
-    req.from = Some(ot.to_string());
-    let err = plan(&fx.repo, &req).unwrap_err();
-    assert!(err.to_string().contains("not an ancestor of --to"), "{err}");
+    req.range.start = Some("onto".into());
+    req.range.end = Some("master".into());
+    let p = plan(&fx.repo, &req).unwrap();
+    // ot's path content equals the target's, so the start does not warn.
+    assert!(
+        !p.warnings.iter().any(|w| w.contains("range start")),
+        "warnings: {:?}",
+        p.warnings
+    );
+    assert_eq!(p.anchor, Some(ot));
+    assert_eq!(step_ids(&p), vec![c1, c2, c3]);
+    assert!(p.verified);
 }
 
 #[test]
-fn from_mismatch_warns_and_conflicts_to_sync() {
-    // onto's path disagrees with the content just before --from.
-    let History { fx, mb, c2, c3, .. } = history();
+fn range_start_mismatch_warns_and_conflicts_to_sync() {
+    // onto's path disagrees with the content at the range start.
+    let History {
+        fx, mb, c1, c2, c3, ..
+    } = history();
     let ot = fx.commit(&[mb], &[w("pkg/file", "vX")], "target diverged");
     fx.branch("onto", ot);
     let mut req = request("pkg");
-    req.from = Some(c2.to_string());
+    req.range.start = Some(c1.to_string());
     let p = plan(&fx.repo, &req).unwrap();
     assert!(
-        p.warnings.iter().any(|w| w.contains("--from")),
+        p.warnings.iter().any(|w| w.contains("range start")),
         "warnings: {:?}",
         p.warnings
     );

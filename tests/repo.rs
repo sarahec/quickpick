@@ -229,8 +229,7 @@ fn planning_leaves_the_repository_untouched() {
             path: "pkg".into(),
             source: "master".into(),
             onto: "onto".into(),
-            from: None,
-            to: None,
+            range: quickpick::plan::Range::default(),
         },
     )
     .unwrap();

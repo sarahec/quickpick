@@ -263,8 +263,8 @@ pub fn history() -> History {
 /// ```
 ///
 /// `onto` diverged (`vX` where `c1` has `v2`), so anchor detection fails and
-/// the plan needs `--from s1` — which also produces the from-mismatch
-/// warning.
+/// the plan needs `--range c1..` — which also produces the range-start
+/// mismatch warning.
 pub struct Mixed {
     /// The two-branch fixture.
     pub fx: Fx,
@@ -332,7 +332,7 @@ pub fn qp<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> (Output, TempDir) {
 }
 
 /// The `qp` arguments for a [`Mixed`] fixture: an explicit range starting
-/// after `c1` (exclusive), which is the old inclusive `--from s1`.
+/// after `c1` (exclusive), covering `s1` through the master tip.
 pub fn mixed_args(m: &Mixed) -> Vec<String> {
     vec![
         "--repo".into(),

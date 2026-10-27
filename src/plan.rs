@@ -46,14 +46,14 @@ impl std::str::FromStr for Range {
 pub struct PlanRequest {
     /// Repository-relative path (file or directory) to bring across.
     pub path: String,
-    /// Source revision expression.
+    /// Source line used to resolve an empty or bare-commit range end and
+    /// to bound the anchor search.
     pub source: String,
-    /// Target revision expression.
+    /// Target revision expression (a bound: branch, commit or
+    /// `branch@commit`).
     pub onto: String,
-    /// Optional inclusive range start.
-    pub from: Option<String>,
-    /// Optional range end; defaults to the newest source commit touching `path`.
-    pub to: Option<String>,
+    /// The requested `<a>..<b>`; an all-empty range uses the defaults.
+    pub range: Range,
 }
 
 /// Owned commit metadata needed by the plan renderers.
@@ -132,9 +132,10 @@ pub struct Plan {
     pub onto: Oid,
     /// First commit in the range (`None` when nothing needs doing).
     pub from: Option<Oid>,
-    /// Last commit in the range.
+    /// Last commit in the range (the resolved `b` end).
     pub to: Oid,
-    /// Detected anchor commit, or the explicit `--from`'s first parent.
+    /// The commit the plan continues from: the detected anchor, or the
+    /// explicit range start `a`.
     pub anchor: Option<Oid>,
     /// Ordered steps.
     pub steps: Vec<Step>,
@@ -152,21 +153,20 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
     repo::install_mempack(repo)?;
     let path = normalize_path(&req.path)?;
     let onto = repo::resolve(repo, &req.onto, "--onto")?;
-    let source = repo::resolve(repo, &req.source, "--source")?;
     let target = repo::path_entry(repo, onto, &path)?;
 
     let mut entries = HashMap::new();
-    let to = resolve_to(repo, req, source, &path, &mut entries)?;
-    let to_entry = repo::path_entry(repo, to, &path)?;
+    let end = resolve_end(repo, req, &path, &mut entries)?;
+    let to_entry = repo::path_entry(repo, end.to, &path)?;
     if to_entry == target {
         return Ok(Plan {
             path: path.to_string_lossy().into_owned(),
-            source_rev: req.source.clone(),
+            source_rev: end.line_rev,
             onto_rev: req.onto.clone(),
-            source,
+            source: end.line,
             onto,
             from: None,
-            to,
+            to: end.to,
             anchor: None,
             steps: vec![],
             warnings: vec![],
@@ -174,23 +174,13 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
         });
     }
 
-    let mb = repo.merge_base(onto, to).map_err(|_| {
-        Error::Planning(format!(
-            "no merge base between '{}' and '{}'",
-            req.onto, req.source
-        ))
-    })?;
-
     let mut warnings = Vec::new();
-    let (anchor, from) = match &req.from {
-        Some(rev) => explicit_from(repo, rev, to, target, &path, &mut warnings)?,
-        None => (
-            detect_anchor(repo, to, mb, target, &path, req, &mut entries)?,
-            None,
-        ),
+    let floor = match &req.range.start {
+        Some(spec) => explicit_start(repo, spec, target, &path, &mut warnings)?,
+        None => detect_anchor(repo, onto, &end, target, &path, req, &mut entries)?,
     };
 
-    let range = range_walk(repo, to, anchor, from, &path, &mut entries)?;
+    let range = range_walk(repo, end.to, floor, &path, &mut entries)?;
 
     let mut sim = Simulation {
         repo,
@@ -206,17 +196,15 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
     let verified = verify(&mut sim, &to_entry)?;
     let steps = merge_syncs(std::mem::take(&mut sim.steps));
 
-    // `from` is the first commit of the range for reporting purposes.
-    let from_oid = from.or(range.first().copied());
     Ok(Plan {
         path: path.to_string_lossy().into_owned(),
-        source_rev: req.source.clone(),
+        source_rev: end.line_rev,
         onto_rev: req.onto.clone(),
-        source,
+        source: end.line,
         onto,
-        from: from_oid,
-        to,
-        anchor: Some(anchor),
+        from: range.first().copied(),
+        to: end.to,
+        anchor: Some(floor),
         steps,
         warnings,
         verified,
@@ -282,24 +270,51 @@ fn touches_cached(
     Ok(cur != parent)
 }
 
-/// Resolve `--to`, or find the newest non-merge source commit touching `path`.
-fn resolve_to(
+/// The resolved range end `b`, plus the source-line context it implies
+/// for reporting.
+struct End {
+    /// The range-end commit.
+    to: Oid,
+    /// The line the range is drawn from: `b`'s named branch, or the
+    /// `source` setting for an empty or bare-commit `b`.
+    line_rev: String,
+    /// `line_rev`'s resolved commit (the `b` bound's own oid for a named
+    /// line, else the resolved `source`).
+    line: Oid,
+}
+
+/// Resolve the range end `b`. A bound naming a branch supplies its own
+/// line; an empty `b` is the newest non-merge commit touching `path` on
+/// the `source` line, and a bare-commit `b` must be reachable from it.
+fn resolve_end(
     repo: &Repository,
     req: &PlanRequest,
-    source: Oid,
     path: &Path,
     entries: &mut Entries,
-) -> Result<Oid, Error> {
-    if let Some(rev) = &req.to {
-        let to = repo::resolve(repo, rev, "--to")?;
-        if to != source && !repo.graph_descendant_of(source, to)? {
+) -> Result<End, Error> {
+    if let Some(spec) = &req.range.end {
+        let b = repo::resolve_bound(repo, spec, "--range")?;
+        if let Some(line) = b.line {
+            return Ok(End {
+                to: b.oid,
+                line_rev: line,
+                line: b.oid,
+            });
+        }
+        let source = repo::resolve(repo, &req.source, "--source")?;
+        if b.oid != source && !repo.graph_descendant_of(source, b.oid)? {
             return Err(Error::Planning(format!(
-                "--to '{rev}' is not a commit on the source '{}'",
+                "the range end '{spec}' is not a commit on the source '{}'",
                 req.source
             )));
         }
-        return Ok(to);
+        return Ok(End {
+            to: b.oid,
+            line_rev: req.source.clone(),
+            line: source,
+        });
     }
+    let source = repo::resolve(repo, &req.source, "--source")?;
     let mut walk = repo.revwalk()?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)?;
     walk.push(source)?;
@@ -309,7 +324,11 @@ fn resolve_to(
             continue;
         }
         if touches_cached(repo, entries, &c, path)? {
-            return Ok(c.id());
+            return Ok(End {
+                to: c.id(),
+                line_rev: req.source.clone(),
+                line: source,
+            });
         }
     }
     Err(Error::Planning(format!(
@@ -318,54 +337,47 @@ fn resolve_to(
     )))
 }
 
-/// Handle an explicit `--from`: check ancestry, warn on anchor mismatch and
-/// return the anchor stand-in (the commit's first parent) plus the range
-/// start.
-fn explicit_from(
+/// Handle an explicit range start `a`: warn when the path's content at
+/// `a` differs from the target's and return `a` as the range floor.
+/// `a` is exclusive and need not be an ancestor of `b`.
+fn explicit_start(
     repo: &Repository,
-    rev: &str,
-    to: Oid,
+    spec: &str,
     target: Option<(Oid, i32)>,
     path: &Path,
     warnings: &mut Vec<String>,
-) -> Result<(Oid, Option<Oid>), Error> {
-    let from = repo::resolve(repo, rev, "--from")?;
-    if from != to && !repo.graph_descendant_of(to, from)? {
-        return Err(Error::Planning(format!(
-            "--from '{rev}' is not an ancestor of --to"
-        )));
-    }
-    let c = repo.find_commit(from)?;
-    let parent = c.parent(0).ok();
-    let base = parent.as_ref().map(Commit::id).unwrap_or(from);
-    let parent_entry = match &parent {
-        Some(p) => repo::path_entry(repo, p.id(), path)?,
-        None => None,
-    };
-    if parent_entry != target {
+) -> Result<Oid, Error> {
+    let a = repo::resolve_bound(repo, spec, "--range")?.oid;
+    if repo::path_entry(repo, a, path)? != target {
         warnings.push(format!(
-            "--from '{rev}' does not continue the target's state: the path content just before \
+            "the range start '{spec}' does not continue the target's state: the path content at \
              {short} differs from the target; the plan may not apply cleanly",
-            short = &from.to_string()[..7]
+            short = &a.to_string()[..7]
         ));
     }
-    Ok((base, Some(from)))
+    Ok(a)
 }
 
-/// Find the anchor: the newest path-touching candidate whose content equals
-/// the target's, else the merge base when it matches.
+/// Find the anchor: the newest path-touching commit reachable from `b`
+/// whose content equals the target's, else the merge base when it matches.
 fn detect_anchor(
     repo: &Repository,
-    to: Oid,
-    mb: Oid,
+    onto: Oid,
+    end: &End,
     target: Option<(Oid, i32)>,
     path: &Path,
     req: &PlanRequest,
     entries: &mut Entries,
 ) -> Result<Oid, Error> {
+    let mb = repo.merge_base(onto, end.to).map_err(|_| {
+        Error::Planning(format!(
+            "no merge base between '{}' and '{}'",
+            req.onto, end.line_rev
+        ))
+    })?;
     let mut walk = repo.revwalk()?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)?;
-    walk.push(to)?;
+    walk.push(end.to)?;
     walk.hide(mb)?;
     for id in walk {
         let id = id?;
@@ -381,33 +393,26 @@ fn detect_anchor(
         return Ok(mb);
     }
     Err(Error::Planning(format!(
-        "no common state found between '{}' and '{}' for '{}'; pass --from to set the range \
-         start (a shallow clone may be missing the shared history)",
-        req.onto, req.source, req.path
+        "no common state found between '{}' and '{}' for '{}'; pass a range start like \
+         '--range <a>..' to set the range floor (a shallow clone may be missing the shared \
+         history)",
+        req.onto, end.line_rev, req.path
     )))
 }
 
-/// Collect the range: non-merge commits that touch `path`, oldest first.
-/// The walk hides the anchor (or `--from`'s parents) and everything behind it.
+/// Collect the range: non-merge commits reachable from `to` but not from
+/// `floor` (exclusive), oldest first, that touch `path`.
 fn range_walk(
     repo: &Repository,
     to: Oid,
-    anchor: Oid,
-    from: Option<Oid>,
+    floor: Oid,
     path: &Path,
     entries: &mut Entries,
 ) -> Result<Vec<Oid>, Error> {
     let mut walk = repo.revwalk()?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::REVERSE)?;
     walk.push(to)?;
-    match from {
-        Some(from) => {
-            for i in 0..repo.find_commit(from)?.parent_count() {
-                walk.hide(repo.find_commit(from)?.parent_id(i)?)?;
-            }
-        }
-        None => walk.hide(anchor)?,
-    }
+    walk.hide(floor)?;
     let mut range = Vec::new();
     for id in walk {
         let c = repo.find_commit(id?)?;
@@ -672,9 +677,9 @@ fn verify(sim: &mut Simulation<'_, '_>, to_entry: &Option<(Oid, i32)>) -> Result
     }
     let differing = differing_files(sim.repo, &sim.state, sim.path, *to_entry)?;
     Err(Error::Planning(format!(
-        "verification failed: the simulated result differs from the path at --to \
+        "verification failed: the simulated result differs from the path at the range end \
          ({}); a merge commit that changes the path itself is a likely cause — \
-         try a narrower --to",
+         try a narrower --range",
         differing.join(", ")
     )))
 }

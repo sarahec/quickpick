@@ -12,7 +12,7 @@
 ## 3. Range plumbing
 
 - [x] 3.1 Parse `--range`/`-r a..b` into two optional bounds: require `..`, allow either side empty. Verify: parsing tests cover `a..b`, `a..`, `..b`, and rejection of a value without `..`.
-- [ ] 3.2 Replace the inclusive `--from` with the exclusive `a` floor throughout the planner: empty `a` defaults to the anchor commit itself (dropping the "first commit after" step), `source` is consulted only for an empty or bare-commit `b` and the anchor search bound, and a bare-commit `b` must be reachable from `source`. Drop the "from must be an ancestor of to" rule. Verify: existing plan tests ported to range inputs pass (old `--from X --to Y` ≡ `--range X^..Y`), plus new tests for the explicit-`a` content warning and an `a`/`b` pair on different lines.
+- [x] 3.2 Replace the inclusive `--from` with the exclusive `a` floor throughout the planner: empty `a` defaults to the anchor commit itself (dropping the "first commit after" step), `source` is consulted only for an empty or bare-commit `b` and the anchor search bound, and a bare-commit `b` must be reachable from `source`. Drop the "from must be an ancestor of to" rule. Verify: existing plan tests ported to range inputs pass (old `--from X --to Y` ≡ `--range X^..Y`), plus new tests for the explicit-`a` content warning and an `a`/`b` pair on different lines.
 - [ ] 3.3 Apply bound semantics to `--onto`, including the `branch@commit` reachability assertion. Verify: a test accepts an on-line pin and rejects an off-line pin naming the branch.
 
 ## 4. Output modes

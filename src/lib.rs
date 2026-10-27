@@ -25,9 +25,6 @@ pub fn run(cli: Cli) -> Result<(), Error> {
         print!("{}", config::show(&settings));
         return Ok(());
     }
-    if cli.range.is_some() {
-        return Err(Error::Planning("--range is not implemented yet".into()));
-    }
     if cli.summary {
         return Err(Error::Planning("--summary is not implemented yet".into()));
     }
@@ -74,8 +71,7 @@ fn load_plan(cli: &Cli) -> Result<(Repository, Plan, Settings), Error> {
         path: path.into(),
         source: settings.source.clone(),
         onto: settings.onto.clone().ok_or(Error::MissingOnto)?,
-        from: None,
-        to: None,
+        range: cli.range.clone().unwrap_or_default(),
     };
     let plan = plan::plan(&repo, &req)?;
     for w in &plan.warnings {
