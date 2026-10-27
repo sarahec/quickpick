@@ -42,7 +42,7 @@
 
 ## 7. Integration
 
-- [ ] 7.1 Wire `propose` and `generate` end to end in `lib::run`, with warnings on stderr and plan or script on stdout; verify with binary tests (`CARGO_BIN_EXE_qp`) against fixtures, showing that both subcommands report the same steps and that "nothing to do" exits 0 with empty script steps
+- [x] 7.1 Wire `propose` and `generate` end to end in `lib::run`, with warnings on stderr and plan or script on stdout; verify with binary tests (`CARGO_BIN_EXE_qp`) against fixtures, showing that both subcommands report the same steps and that "nothing to do" exits 0 with empty script steps
 - [ ] 7.2 Add an integration test that runs the generated git script with `sh` in a fixture clone and asserts the path at the new branch tip equals the path at `--to`; add the equivalent jj test, skipped when `jj` is not on `PATH`; verify both pass, or the jj test is reported skipped
 - [ ] 7.3 Run `qp propose` against a real local nixpkgs clone, if available, for one package with a known backport history; record the run time and the plan's plausibility in design.md risks; narrow `merge_trees` to the subtree if it's too slow
 - [ ] 7.4 Document usage (subcommands, settings, precedence, dialects, examples) in a `README.md` and in clap help text; verify that `qp --help`, `qp propose --help` and `qp generate --help` show it

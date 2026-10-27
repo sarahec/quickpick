@@ -249,3 +249,55 @@ pub fn history() -> History {
         ot,
     }
 }
+
+/// A fixture whose plan for `pkg` is one merged SYNC (a conflicting commit
+/// covered together with an outside-path commit) followed by a PICK:
+///
+/// ```text
+///        mb ── ot                        (branch "onto", pkg/file = "vX")
+///        |
+///        └── c1 ── s1 ── s2 ── s3        (branch "master")
+/// ```
+///
+/// `onto` diverged (`vX` where `c1` has `v2`), so anchor detection fails and
+/// the plan needs `--from s1` — which also produces the from-mismatch
+/// warning.
+pub struct Mixed {
+    /// The two-branch fixture.
+    pub fx: Fx,
+    /// The merge base.
+    pub mb: Oid,
+    /// Anchor parent; `pkg/file` = `"v2"`.
+    pub c1: Oid,
+    /// First commit of `--from`: an in-path change that conflicts (vX vs v3).
+    pub s1: Oid,
+    /// Second commit: in-path change plus a file outside `pkg`.
+    pub s2: Oid,
+    /// Master tip and `--to`: a clean in-path change that picks.
+    pub s3: Oid,
+}
+
+/// Build [`Mixed`].
+pub fn mixed() -> Mixed {
+    let fx = Fx::new();
+    let mb = fx.commit(&[], &[w("pkg/file", "v1"), w("other", "o")], "base");
+    let c1 = fx.commit(&[mb], &[w("pkg/file", "v2")], "pkg: v1 -> v2");
+    let s1 = fx.commit(&[c1], &[w("pkg/file", "v3")], "pkg: v2 -> v3");
+    let s2 = fx.commit(
+        &[s1],
+        &[w("pkg/file", "v4"), w("other", "o2")],
+        "pkg: v3 -> v4 + outside",
+    );
+    let s3 = fx.commit(&[s2], &[w("pkg/file", "v5")], "pkg: v4 -> v5");
+    let ot = fx.commit(&[mb], &[w("pkg/file", "vX")], "target diverged");
+    fx.branch("master", s3);
+    fx.branch("onto", ot);
+    Mixed {
+        fx,
+        mb,
+        c1,
+        s1,
+        s2,
+        s3,
+    }
+}
