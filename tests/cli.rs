@@ -2,63 +2,7 @@
 
 mod common;
 
-use std::io::Write as _;
-use std::process::{Command, Output, Stdio};
-
 use common::*;
-
-/// Run `qp` with a scrubbed environment: only PATH, HOME and an empty
-/// XDG_CONFIG_HOME survive, so no user `quickpick.toml` or `QUICKPICK__*`
-/// variable leaks in.
-fn qp<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> (Output, tempfile::TempDir) {
-    let home = tempfile::tempdir().unwrap();
-    let cfg = home.path().join("cfg");
-    std::fs::create_dir(&cfg).unwrap();
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    let out = Command::new(env!("CARGO_BIN_EXE_qp"))
-        .args(args)
-        .env_clear()
-        .env("PATH", path)
-        .env("HOME", home.path())
-        .env("XDG_CONFIG_HOME", &cfg)
-        .output()
-        .unwrap();
-    (out, home)
-}
-
-fn stdout(o: &Output) -> String {
-    String::from_utf8_lossy(&o.stdout).into_owned()
-}
-
-fn stderr(o: &Output) -> String {
-    String::from_utf8_lossy(&o.stderr).into_owned()
-}
-
-/// `sh -n` syntax check; skipped when `sh` is not on PATH.
-fn sh_check(script: &str) {
-    let Ok(mut cmd) = Command::new("sh").arg("-n").stdin(Stdio::piped()).spawn() else {
-        return;
-    };
-    cmd.stdin
-        .as_mut()
-        .unwrap()
-        .write_all(script.as_bytes())
-        .unwrap();
-    assert!(cmd.wait().unwrap().success(), "sh -n rejected:\n{script}");
-}
-
-fn mixed_args(cmd: &str, m: &Mixed) -> Vec<String> {
-    vec![
-        cmd.into(),
-        "--repo".into(),
-        m.fx.dir.path().to_string_lossy().into_owned(),
-        "--onto".into(),
-        "onto".into(),
-        "--from".into(),
-        m.s1.to_string(),
-        "pkg".into(),
-    ]
-}
 
 #[test]
 fn propose_and_generate_report_the_same_steps() {

@@ -1,11 +1,14 @@
 //! Fixture builder for integration tests: temporary git repositories with
-//! commits, merges, branches and path deletions built directly with `git2`.
+//! commits, merges, branches and path deletions built directly with `git2`,
+//! plus subprocess helpers for running `qp` and generated scripts.
 //!
 //! Shared across test crates, so unused helpers are expected per target.
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
+use std::io::Write as _;
 use std::path::Path;
+use std::process::{Command, Output, Stdio};
 
 use git2::{Oid, Repository, Signature, Time, Tree};
 use tempfile::TempDir;
@@ -300,4 +303,92 @@ pub fn mixed() -> Mixed {
         s2,
         s3,
     }
+}
+
+/// Run `qp` with a scrubbed environment: only PATH, HOME and an empty
+/// XDG_CONFIG_HOME survive, so no user `quickpick.toml` or `QUICKPICK__*`
+/// variable leaks in.
+pub fn qp<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> (Output, TempDir) {
+    let home = TempDir::new().unwrap();
+    let cfg = home.path().join("cfg");
+    std::fs::create_dir(&cfg).unwrap();
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let out = Command::new(env!("CARGO_BIN_EXE_qp"))
+        .args(args)
+        .env_clear()
+        .env("PATH", path)
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", &cfg)
+        .output()
+        .unwrap();
+    (out, home)
+}
+
+/// The `qp generate` arguments for a [`Mixed`] fixture.
+pub fn mixed_args(cmd: &str, m: &Mixed) -> Vec<String> {
+    vec![
+        cmd.into(),
+        "--repo".into(),
+        m.fx.dir.path().to_string_lossy().into_owned(),
+        "--onto".into(),
+        "onto".into(),
+        "--from".into(),
+        m.s1.to_string(),
+        "pkg".into(),
+    ]
+}
+
+/// `sh -n` syntax check; skipped when `sh` is not on PATH.
+pub fn sh_check(script: &str) {
+    let Ok(mut cmd) = Command::new("sh").arg("-n").stdin(Stdio::piped()).spawn() else {
+        return;
+    };
+    cmd.stdin
+        .as_mut()
+        .unwrap()
+        .write_all(script.as_bytes())
+        .unwrap();
+    assert!(cmd.wait().unwrap().success(), "sh -n rejected:\n{script}");
+}
+
+/// Whether `name` resolves to an executable on PATH.
+pub fn on_path(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Run `script` through `sh` with extra environment variables, in a
+/// scrubbed environment.
+pub fn run_script(script: &str, envs: &[(&str, &Path)]) -> Output {
+    let home = TempDir::new().unwrap();
+    let mut cmd = Command::new("sh");
+    cmd.stdin(Stdio::piped())
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", home.path());
+    for (k, v) in envs {
+        cmd.env(k, v);
+    }
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(script.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+pub fn stdout(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stdout).into_owned()
+}
+
+pub fn stderr(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stderr).into_owned()
 }
