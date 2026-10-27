@@ -2,82 +2,56 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
-use clapfig::ConfigArgs;
+use clap::Parser;
 use serde::Serialize;
 
 use crate::config::Vcs;
 
 /// Command line for `qp`.
-#[derive(Parser, Debug)]
+///
+/// The `repo`, `source`, `onto`, `vcs` and `branch` fields double as the
+/// clapfig CLI-override layer; the remaining fields are inputs or mode
+/// selectors only and are ignored by [`clapfig`]'s schema matching.
+#[derive(Parser, Serialize, Debug)]
 #[command(
     name = "qp",
     version,
     about = "Plan path-scoped backports across git branches",
     long_about = "Plan path-scoped backports across git branches.\n\n\
-        quickpick finds the commits on a source revision that changed one \
+        quickpick finds the commits on a source line that changed one \
         path, works out which of them can be cherry-picked onto a target \
-        revision, and either explains the plan (propose) or emits a \
-        self-contained shell script that performs it (generate), for git \
+        revision, and emits a self-contained shell script that performs \
+        the plan (or, with --explain or --summary, describes it), for git \
         or jujutsu. Planning is strictly read-only: nothing in the \
         repository is modified."
 )]
 pub struct Cli {
-    /// The subcommand to run.
-    #[command(subcommand)]
-    pub command: Commands,
-}
-
-/// The `qp` subcommands.
-#[derive(Subcommand, Debug)]
-pub enum Commands {
-    /// Explain the planned steps in human-readable form.
-    #[command(
-        visible_alias = "p",
-        long_about = "Explain the planned steps in human-readable form: the \
-            anchor, the commit range (from --from, inclusive, to --to), and \
-            each PICK or SYNC step with its reason."
-    )]
-    Propose(PlanArgs),
-    /// Print a self-contained shell script that performs the plan.
-    #[command(
-        visible_alias = "g",
-        long_about = "Print a self-contained POSIX shell script that performs \
-            the plan: cherry-picks for PICK steps and content-restoring \
-            commits for SYNC steps, in the selected dialect (git or \
-            jujutsu). Review it, then run it with `sh` inside the repository."
-    )]
-    Generate(PlanArgs),
-    /// Manage the configuration file (gen, list, get, set, unset, schema).
-    #[command(visible_aliases = ["c", "config"])]
-    Configure(ConfigArgs),
-}
-
-/// Planning options shared by `propose` and `generate`.
-///
-/// The `repo`, `source`, `onto`, `vcs` and `branch` fields double as the
-/// clapfig CLI-override layer; `from`, `to` and `path` are planning inputs
-/// only and are ignored by [`clapfig`]'s schema matching.
-#[derive(Args, Serialize, Debug)]
-pub struct PlanArgs {
     /// Repository-relative path to a file or directory.
     #[serde(skip_serializing)]
-    pub path: PathBuf,
+    #[arg(required_unless_present = "show_config")]
+    pub path: Option<PathBuf>,
+    /// Explain the planned steps in human-readable form instead of
+    /// printing the script.
+    #[serde(skip_serializing)]
+    #[arg(long, conflicts_with = "summary")]
+    pub explain: bool,
+    /// Print a condensed plan instead of the script.
+    #[serde(skip_serializing)]
+    #[arg(long)]
+    pub summary: bool,
+    /// Commit range `a..b` on the source: `a` is exclusive and either side
+    /// may be empty. Each bound is `branch`, a commit, or `branch@commit`.
+    #[serde(skip_serializing)]
+    #[arg(long, short = 'r', value_name = "A..B")]
+    pub range: Option<String>,
     /// Target revision to bring the path onto (required; may come from
-    /// QUICKPICK__ONTO or quickpick.toml instead).
+    /// QUICKPICK__ONTO or quickpick.toml instead). Accepts the same bound
+    /// syntax as a range side.
     #[arg(long)]
     pub onto: Option<String>,
-    /// Source revision.
+    /// Source line used for bare-commit bounds and the anchor search.
     #[arg(long)]
     pub source: Option<String>,
-    /// First source commit to copy (inclusive); defaults to just after the anchor.
-    #[arg(long)]
-    #[serde(skip_serializing)]
-    pub from: Option<String>,
-    /// Last source commit to copy; defaults to the newest commit touching the path.
-    #[arg(long)]
-    #[serde(skip_serializing)]
-    pub to: Option<String>,
     /// Script dialect.
     #[arg(long, value_enum)]
     pub vcs: Option<Vcs>,
@@ -87,6 +61,10 @@ pub struct PlanArgs {
     /// Repository to operate on (default: current working directory).
     #[arg(long)]
     pub repo: Option<PathBuf>,
+    /// Print the merged settings and exit.
+    #[serde(skip_serializing)]
+    #[arg(long)]
+    pub show_config: bool,
 }
 
 #[cfg(test)]
@@ -99,47 +77,52 @@ mod tests {
     }
 
     #[test]
-    fn missing_subcommand_is_a_usage_error() {
-        let err = parse(&["qp"]).unwrap_err();
-        assert_eq!(
-            err.kind(),
-            ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
-        );
+    fn bare_path_selects_script_mode() {
+        let cli = parse(&["qp", "pkgs/x"]).unwrap();
+        assert!(!cli.explain && !cli.summary);
+        assert_eq!(cli.path.as_deref(), Some("pkgs/x".as_ref()));
+        assert!(cli.range.is_none());
+    }
+
+    #[test]
+    fn explain_and_summary_conflict() {
+        let err = parse(&["qp", "--explain", "--summary", "p"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
     }
 
     #[test]
     fn missing_path_is_a_usage_error() {
-        let err = parse(&["qp", "propose", "--onto", "release-26.05"]).unwrap_err();
+        let err = parse(&["qp", "--onto", "release-26.05"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
     }
 
     #[test]
-    fn aliases_parse_to_the_same_commands() {
-        for (full, short) in [
-            ("propose", "p"),
-            ("generate", "g"),
-            ("configure", "c"),
-            ("configure", "config"),
-        ] {
-            let args = match full {
-                "configure" => vec!["qp", short, "list"],
-                _ => vec!["qp", short, "--onto", "t", "p/x"],
-            };
-            let cli = parse(&args).unwrap_or_else(|e| panic!("{short}: {e}"));
-            match (&cli.command, full) {
-                (Commands::Propose(_), "propose")
-                | (Commands::Generate(_), "generate")
-                | (Commands::Configure(_), "configure") => {}
-                (other, _) => panic!("alias {short} parsed to {other:?}, expected {full}"),
-            }
+    fn short_range_flag_parses_like_the_long_one() {
+        for flag in ["--range", "-r"] {
+            let cli = parse(&["qp", flag, "a..b", "p"]).unwrap();
+            assert_eq!(cli.range.as_deref(), Some("a..b"), "{flag}");
         }
     }
 
     #[test]
-    fn help_lists_the_aliases() {
+    fn show_config_does_not_require_a_path() {
+        let cli = parse(&["qp", "--show-config"]).unwrap();
+        assert!(cli.show_config);
+        assert!(cli.path.is_none());
+    }
+
+    #[test]
+    fn help_lists_the_modes_and_options() {
         let help = Cli::command().render_long_help().to_string();
-        for alias in ["p", "g", "c", "config"] {
-            assert!(help.contains(alias), "help missing alias {alias}:\n{help}");
+        for flag in [
+            "--explain",
+            "--summary",
+            "--range",
+            "--onto",
+            "--vcs",
+            "--show-config",
+        ] {
+            assert!(help.contains(flag), "help missing {flag}:\n{help}");
         }
         assert!(help.contains("Usage: qp"), "{help}");
     }

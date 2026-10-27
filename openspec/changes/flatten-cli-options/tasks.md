@@ -2,7 +2,7 @@
 
 ## 1. Flatten the CLI surface
 
-- [ ] 1.1 Replace `Commands`/`PlanArgs` with one flat `#[derive(Parser)]` struct: positional `path`, `--explain`/`--summary` (mutually exclusive via clap), `--range`/`-r`, `--onto`, `--source`, `--vcs`, `--repo`, `--branch`, and `--show-config`. Remove the clapfig `ConfigArgs` wiring and all aliases. Verify: unit tests show `qp <path>` parses to script mode, `--explain --summary` together fails, and a missing path is a usage error.
+- [x] 1.1 Replace `Commands`/`PlanArgs` with one flat `#[derive(Parser)]` struct: positional `path`, `--explain`/`--summary` (mutually exclusive via clap), `--range`/`-r`, `--onto`, `--source`, `--vcs`, `--repo`, `--branch`, and `--show-config`. Remove the clapfig `ConfigArgs` wiring and all aliases. Verify: unit tests show `qp <path>` parses to script mode, `--explain --summary` together fails, and a missing path is a usage error.
 - [ ] 1.2 Add the bound parser (`branch|commit|branch@commit`): resolve the whole value as a revision first, else split at the last `@` and assert the commit is reachable from the branch. A bound records its resolved `Oid` plus the line it names, if any. Verify: fixture-repo tests cover a bare branch, a bare commit, an on-line `branch@commit`, an off-line `branch@commit` (error), a ref literally named `foo@bar`, and a non-resolving value (error).
 
 ## 2. Settings: `--show-config`

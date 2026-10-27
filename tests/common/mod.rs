@@ -324,16 +324,27 @@ pub fn qp<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> (Output, TempDir) {
     (out, home)
 }
 
-/// The `qp generate` arguments for a [`Mixed`] fixture.
-pub fn mixed_args(cmd: &str, m: &Mixed) -> Vec<String> {
+/// The `qp` arguments for a [`Mixed`] fixture: an explicit range starting
+/// after `c1` (exclusive), which is the old inclusive `--from s1`.
+pub fn mixed_args(m: &Mixed) -> Vec<String> {
     vec![
-        cmd.into(),
         "--repo".into(),
         m.fx.dir.path().to_string_lossy().into_owned(),
         "--onto".into(),
         "onto".into(),
-        "--from".into(),
-        m.s1.to_string(),
+        "--range".into(),
+        format!("{}..", m.c1),
+        "pkg".into(),
+    ]
+}
+
+/// The `qp` arguments for a [`History`] fixture with the default range.
+pub fn history_args(h: &History) -> Vec<String> {
+    vec![
+        "--repo".into(),
+        h.fx.dir.path().to_string_lossy().into_owned(),
+        "--onto".into(),
+        "onto".into(),
         "pkg".into(),
     ]
 }

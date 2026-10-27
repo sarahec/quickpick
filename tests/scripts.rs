@@ -18,8 +18,8 @@ fn generated_git_script_applies_the_plan() {
         eprintln!("skipping: git is not on PATH");
         return;
     }
-    let m = mixed();
-    let (out, _h) = qp(&mixed_args("generate", &m));
+    let h = history();
+    let (out, _h) = qp(&history_args(&h));
     assert!(out.status.success(), "{}", stderr(&out));
     let script = stdout(&out);
 
@@ -36,17 +36,17 @@ fn generated_git_script_applies_the_plan() {
     );
     assert!(result.status.success(), "{}", stderr(&result));
 
-    // The new branch tip carries exactly the path's state at --to.
-    let tip = m.fx.oid("quickpick/pkg");
-    let got = repo::path_entry(&m.fx.repo, tip, Path::new("pkg")).unwrap();
-    let want = repo::path_entry(&m.fx.repo, m.s3, Path::new("pkg")).unwrap();
+    // The new branch tip carries exactly the path's state at the range end.
+    let tip = h.fx.oid("quickpick/pkg");
+    let got = repo::path_entry(&h.fx.repo, tip, Path::new("pkg")).unwrap();
+    let want = repo::path_entry(&h.fx.repo, h.c3, Path::new("pkg")).unwrap();
     assert_eq!(got, want);
 
     // The last step was a PICK, so the tip is a cherry-pick with the trailer.
-    let tipc = m.fx.repo.find_commit(tip).unwrap();
+    let tipc = h.fx.repo.find_commit(tip).unwrap();
     let msg = tipc.message().unwrap().to_string();
     assert!(
-        msg.contains(&format!("cherry picked from commit {}", m.s3)),
+        msg.contains(&format!("cherry picked from commit {}", h.c3)),
         "{msg}"
     );
 }
@@ -57,7 +57,7 @@ fn generated_jj_script_applies_the_plan() {
         eprintln!("skipping: jj is not on PATH");
         return;
     }
-    let m = mixed();
+    let h = history();
     let cfg_dir = TempDir::new().unwrap();
     let cfg = cfg_dir.path().join("jj.toml");
     fs::write(&cfg, "[user]\nname = \"T\"\nemail = \"t@x\"\n").unwrap();
@@ -65,7 +65,7 @@ fn generated_jj_script_applies_the_plan() {
     let run_jj = |args: &[&str]| -> std::process::Output {
         Command::new("jj")
             .args(args)
-            .current_dir(m.fx.dir.path())
+            .current_dir(h.fx.dir.path())
             .env_clear()
             .env("PATH", std::env::var_os("PATH").unwrap_or_default())
             .envs(envs.iter().map(|(k, v)| (k, v.as_os_str())))
@@ -75,9 +75,9 @@ fn generated_jj_script_applies_the_plan() {
     let init = run_jj(&["git", "init", "--colocate"]);
     assert!(init.status.success(), "{}", stderr(&init));
 
-    let mut args = mixed_args("generate", &m);
-    args.insert(1, "--vcs".into());
-    args.insert(2, "jujutsu".into());
+    let mut args = history_args(&h);
+    args.insert(0, "jujutsu".into());
+    args.insert(0, "--vcs".into());
     let (out, _h) = qp(&args);
     assert!(out.status.success(), "{}", stderr(&out));
 
@@ -88,8 +88,8 @@ fn generated_jj_script_applies_the_plan() {
     let at = run_jj(&["log", "-r", "@-", "--no-graph", "-T", "commit_id"]);
     assert!(at.status.success(), "{}", stderr(&at));
     let at_id: Oid = stdout(&at).trim().parse().unwrap();
-    let got = repo::path_entry(&m.fx.repo, at_id, Path::new("pkg")).unwrap();
-    let want = repo::path_entry(&m.fx.repo, m.s3, Path::new("pkg")).unwrap();
+    let got = repo::path_entry(&h.fx.repo, at_id, Path::new("pkg")).unwrap();
+    let want = repo::path_entry(&h.fx.repo, h.c3, Path::new("pkg")).unwrap();
     assert_eq!(got, want);
 
     let conflicts = run_jj(&["log", "-r", "conflicts()", "--no-graph", "-T", "commit_id"]);

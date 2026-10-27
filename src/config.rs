@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use clapfig::{Clapfig, Schema, TypedBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::cli::PlanArgs;
+use crate::cli::Cli;
 use crate::error::Error;
 
 /// Script dialect for `generate`.
@@ -50,13 +50,13 @@ pub fn builder() -> TypedBuilder<Settings> {
 /// Load settings, applying the CLI flags in `args` as the top layer.
 ///
 /// Fails with [`Error::MissingOnto`] when no layer provides a target.
-pub fn load(args: &PlanArgs) -> Result<Settings, Error> {
+pub fn load(args: &Cli) -> Result<Settings, Error> {
     load_from(builder(), args)
 }
 
 /// Like [`load`], but on a caller-configured builder (used by tests to
 /// isolate file and environment layers).
-fn load_from(b: TypedBuilder<Settings>, args: &PlanArgs) -> Result<Settings, Error> {
+fn load_from(b: TypedBuilder<Settings>, args: &Cli) -> Result<Settings, Error> {
     let settings = b
         .cli_overrides_from(args)
         .load()
@@ -90,16 +90,18 @@ mod tests {
         }
     }
 
-    fn base_args() -> PlanArgs {
-        PlanArgs {
-            path: "pkgs/x".into(),
+    fn base_args() -> Cli {
+        Cli {
+            path: Some("pkgs/x".into()),
+            explain: false,
+            summary: false,
+            range: None,
             onto: None,
             source: None,
-            from: None,
-            to: None,
             vcs: None,
             branch: None,
             repo: None,
+            show_config: false,
         }
     }
 

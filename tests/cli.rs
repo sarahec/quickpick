@@ -5,39 +5,33 @@ mod common;
 use common::*;
 
 #[test]
-fn propose_and_generate_report_the_same_steps() {
-    let m = mixed();
-    let (propose, _h1) = qp(&mixed_args("propose", &m));
-    let (generate, _h2) = qp(&mixed_args("generate", &m));
-    assert!(propose.status.success(), "{}", stderr(&propose));
-    assert!(generate.status.success(), "{}", stderr(&generate));
-    // The commits the plan names — the sync target and the pick — are the
-    // same in both outputs: full ids in the script, shorts in the proposal.
-    let s2 = m.s2.to_string();
-    let s3 = m.s3.to_string();
-    let script = stdout(&generate);
-    let proposal = stdout(&propose);
-    for id in [&s2, &s3] {
-        assert!(script.contains(id), "{script}");
-        assert!(proposal.contains(&id[..7]), "{proposal}");
+fn explain_and_script_report_the_same_steps() {
+    let h = history();
+    let (explain, _h1) = qp(&[history_args(&h), vec!["--explain".into()]].concat());
+    let (script, _h2) = qp(&history_args(&h));
+    assert!(explain.status.success(), "{}", stderr(&explain));
+    assert!(script.status.success(), "{}", stderr(&script));
+    // The commits the plan names are the same in both outputs: full ids in
+    // the script, shorts in the explanation.
+    let c2 = h.c2.to_string();
+    let c3 = h.c3.to_string();
+    let script_out = stdout(&script);
+    let explanation = stdout(&explain);
+    for id in [&c2, &c3] {
+        assert!(script_out.contains(id), "{script_out}");
+        assert!(explanation.contains(&id[..7]), "{explanation}");
     }
-    // The covered (conflicting) source commit appears in both, too.
-    let s1 = m.s1.to_string();
-    assert!(script.contains(&s1[..7]), "{script}");
-    assert!(proposal.contains(&s1[..7]), "{proposal}");
-    assert!(proposal.contains("PICK"), "{proposal}");
-    assert!(proposal.contains("SYNC"), "{proposal}");
-    sh_check(&script);
+    assert!(explanation.contains("PICK"), "{explanation}");
+    sh_check(&script_out);
 }
 
 #[test]
-fn nothing_to_do_exits_zero_with_empty_generate_stdout() {
+fn nothing_to_do_exits_zero_with_empty_script_stdout() {
     let History { fx, mb, c3, .. } = history();
     let ot = fx.commit(&[mb], &[w("pkg/file", "v4")], "target in sync");
     fx.branch("onto", ot);
     let _ = c3;
     let (out, _h) = qp(&[
-        "generate",
         "--repo",
         &fx.dir.path().to_string_lossy(),
         "--onto",
@@ -52,7 +46,7 @@ fn nothing_to_do_exits_zero_with_empty_generate_stdout() {
 #[test]
 fn missing_onto_exits_one_and_names_the_env_var() {
     let History { fx, .. } = history();
-    let (out, _h) = qp(&["propose", "--repo", &fx.dir.path().to_string_lossy(), "pkg"]);
+    let (out, _h) = qp(&["--repo", &fx.dir.path().to_string_lossy(), "pkg"]);
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     let err = stderr(&out);
     assert!(err.contains("--onto"), "{err}");
@@ -62,12 +56,31 @@ fn missing_onto_exits_one_and_names_the_env_var() {
 
 #[test]
 fn warnings_go_to_stderr_while_stdout_stays_a_script() {
-    let m = mixed();
-    let (out, _h) = qp(&mixed_args("generate", &m));
+    let History { fx, c1, .. } = history();
+    // A commit that also touches a shared definition file warns on stderr.
+    let c4 = fx.commit(
+        &[c1],
+        &[
+            w("pkg/file", "v3"),
+            w("pkgs/top-level/all-packages.nix", "ap"),
+        ],
+        "bump + shared file",
+    );
+    fx.branch("master", c4);
+    let (out, _h) = qp(&[
+        "--repo",
+        &fx.dir.path().to_string_lossy(),
+        "--onto",
+        "onto",
+        "pkg",
+    ]);
     assert!(out.status.success(), "{}", stderr(&out));
-    // --from s1 does not continue the target's state (vX vs v2).
     assert!(stderr(&out).contains("warning"), "{}", stderr(&out));
-    assert!(stderr(&out).contains("--from"), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("all-packages.nix"),
+        "{}",
+        stderr(&out)
+    );
     sh_check(&stdout(&out));
 }
 
@@ -75,7 +88,6 @@ fn warnings_go_to_stderr_while_stdout_stays_a_script() {
 fn bad_path_exits_two() {
     let History { fx, .. } = history();
     let (out, _h) = qp(&[
-        "propose",
         "--repo",
         &fx.dir.path().to_string_lossy(),
         "--onto",
