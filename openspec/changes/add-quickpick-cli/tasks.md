@@ -2,7 +2,7 @@
 
 ## 1. Project setup
 
-- [ ] 1.1 Add a `[[bin]]` entry to `Cargo.toml` with `name = "qp"` and `path = "src/main.rs"`, keeping the package name `quickpick`, and set `#[command(name = "qp")]`; verify `cargo build` produces `target/debug/qp` and no `target/debug/quickpick` executable, and `cargo run -- --help` prints `Usage: qp`
+- [x] 1.1 Add a `[[bin]]` entry to `Cargo.toml` with `name = "qp"` and `path = "src/main.rs"`, keeping the package name `quickpick`, and set `#[command(name = "qp")]`; verify `cargo build` produces `target/debug/qp` and no `target/debug/quickpick` executable, and `cargo run -- --help` prints `Usage: qp`
 - [ ] 1.2 Add `git2` with `cargo add git2` and `tempfile` with `cargo add --dev tempfile`; remove `url` with `cargo remove url` if nothing needs it; verify `cargo build` succeeds
 - [ ] 1.3 Check the clapfig 0.21.4 API against design decision 2 (`Schema` derive, `env_prefix`, `cli_override`, unit-enum validation, `ConfigArgs`); upgrade with `cargo add clapfig@<version>` if needed; record the version used in design.md; verify `cargo build` succeeds
 - [ ] 1.4 Create the crate layout from design decision 1 (`lib.rs`, `cli.rs`, `config.rs`, `repo.rs`, `plan.rs`, `render/{propose,git,jj,message}.rs`, `error.rs`) with doc comments on every module; make `main.rs` a thin wrapper around `lib::run`; verify `cargo build` and `cargo clippy -- -D warnings` pass

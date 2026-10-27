@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use clapfig::ConfigArgs;
 
 #[derive(Parser)]
-#[command(name = "quickpick")]
+#[command(name = "qp")]
 #[command(version = "0.1.0")]
 #[command(about = "Git cherry-pick management tool", long_about = None)]
 struct Cli {
