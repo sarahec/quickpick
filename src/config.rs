@@ -48,6 +48,8 @@ pub fn builder() -> TypedBuilder<Settings> {
 }
 
 /// Load settings, applying the CLI flags in `args` as the top layer.
+///
+/// Fails with [`Error::MissingOnto`] when no layer provides a target.
 pub fn load(args: &PlanArgs) -> Result<Settings, Error> {
     load_from(builder(), args)
 }
@@ -55,9 +57,14 @@ pub fn load(args: &PlanArgs) -> Result<Settings, Error> {
 /// Like [`load`], but on a caller-configured builder (used by tests to
 /// isolate file and environment layers).
 fn load_from(b: TypedBuilder<Settings>, args: &PlanArgs) -> Result<Settings, Error> {
-    b.cli_overrides_from(args)
+    let settings = b
+        .cli_overrides_from(args)
         .load()
-        .map_err(|e| Error::Config(e.to_string()))
+        .map_err(|e| Error::Config(e.to_string()))?;
+    if settings.onto.is_none() {
+        return Err(Error::MissingOnto);
+    }
+    Ok(settings)
 }
 
 #[cfg(test)]
@@ -185,5 +192,19 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("git"), "{msg}");
         assert!(msg.contains("jujutsu"), "{msg}");
+    }
+
+    #[test]
+    fn load_rejects_missing_onto() {
+        let err = load_from(builder().no_env(), &base_args()).unwrap_err();
+        assert!(matches!(err, Error::MissingOnto));
+    }
+
+    #[test]
+    fn load_accepts_onto_from_flag() {
+        let mut args = base_args();
+        args.onto = Some("release-26.05".into());
+        let settings = load_from(builder().no_env(), &args).unwrap();
+        assert_eq!(settings.onto.as_deref(), Some("release-26.05"));
     }
 }
