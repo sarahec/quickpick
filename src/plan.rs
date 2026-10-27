@@ -87,6 +87,8 @@ pub enum Step {
 /// A computed plan, owned and free of `git2` lifetimes.
 #[derive(Debug)]
 pub struct Plan {
+    /// The normalized repository-relative path.
+    pub path: String,
     /// Source revision expression as requested.
     pub source_rev: String,
     /// Target revision expression as requested.
@@ -124,6 +126,7 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
     let to_entry = repo::path_entry(repo, to, &path)?;
     if to_entry == target {
         return Ok(Plan {
+            path: path.to_string_lossy().into_owned(),
             source_rev: req.source.clone(),
             onto_rev: req.onto.clone(),
             source,
@@ -169,6 +172,7 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
     // `from` is the first commit of the range for reporting purposes.
     let from_oid = from.or(range.first().copied());
     Ok(Plan {
+        path: path.to_string_lossy().into_owned(),
         source_rev: req.source.clone(),
         onto_rev: req.onto.clone(),
         source,
