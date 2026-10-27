@@ -25,12 +25,13 @@ pub fn run(cli: Cli) -> Result<(), Error> {
         print!("{}", config::show(&settings));
         return Ok(());
     }
-    if cli.summary {
-        return Err(Error::Planning("--summary is not implemented yet".into()));
-    }
     let (repo, plan, settings) = load_plan(&cli)?;
     if cli.explain {
         print!("{}", render::propose::render(&plan, settings.vcs));
+        return Ok(());
+    }
+    if cli.summary {
+        print!("{}", render::summary::render(&plan, settings.vcs));
         return Ok(());
     }
     if plan.steps.is_empty() {

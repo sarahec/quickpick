@@ -4,6 +4,7 @@ pub mod git;
 pub mod jj;
 pub mod message;
 pub mod propose;
+pub mod summary;
 
 use git2::Oid;
 

@@ -18,7 +18,7 @@
 ## 4. Output modes
 
 - [ ] 4.1 Dispatch on mode in `main`: default script, `--explain` to the existing detailed renderer, `--summary` to the new one. Verify: an integration test runs each mode against a fixture and confirms script/explain/summary outputs and the flag-conflict error.
-- [ ] 4.2 Implement the summary renderer: resolved source and target, anchor, range, one numbered line per step (`PICK`/`SYNC` + short id), and the verification verdict, without covered-commit detail. Verify: a renderer test on a mixed plan produces exactly the condensed lines.
+- [x] 4.2 Implement the summary renderer: resolved source and target, anchor, range, one numbered line per step (`PICK`/`SYNC` + short id), and the verification verdict, without covered-commit detail. Verify: a renderer test on a mixed plan produces exactly the condensed lines.
 
 ## 5. Cleanup, docs and release
 
