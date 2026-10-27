@@ -163,7 +163,8 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
     for id in &range {
         sim.step(repo.find_commit(*id)?)?;
     }
-    let verified = repo::tree_entry(&sim.state, &path)? == to_entry;
+    let verified = verify(&mut sim, &to_entry)?;
+    let steps = merge_syncs(std::mem::take(&mut sim.steps));
 
     // `from` is the first commit of the range for reporting purposes.
     let from_oid = from.or(range.first().copied());
@@ -175,7 +176,7 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
         from: from_oid,
         to,
         anchor: Some(anchor),
-        steps: sim.steps,
+        steps,
         warnings,
         verified,
     })
@@ -499,4 +500,83 @@ fn set_component(
         return Ok(None);
     }
     Ok(Some(builder.write()?))
+}
+
+/// Merge adjacent SYNC steps: keep the last covered commit as the target and
+/// every covered commit with its reason, in order.
+fn merge_syncs(steps: Vec<Step>) -> Vec<Step> {
+    let mut merged: Vec<Step> = Vec::with_capacity(steps.len());
+    for step in steps {
+        match (merged.last_mut(), step) {
+            (
+                Some(Step::Sync {
+                    target,
+                    covered,
+                    removes_path,
+                }),
+                Step::Sync {
+                    target: new_target,
+                    covered: new_covered,
+                    removes_path: new_removes,
+                },
+            ) => {
+                *target = new_target;
+                *removes_path = new_removes;
+                covered.extend(new_covered);
+            }
+            (_, step) => merged.push(step),
+        }
+    }
+    merged
+}
+
+/// Verify the simulated state against `to`'s path content.
+fn verify(sim: &mut Simulation<'_, '_>, to_entry: &Option<(Oid, i32)>) -> Result<bool, Error> {
+    let state_entry = repo::tree_entry(&sim.state, sim.path)?;
+    if &state_entry == to_entry {
+        return Ok(true);
+    }
+    let differing = differing_files(sim.repo, &sim.state, sim.path, *to_entry)?;
+    Err(Error::Planning(format!(
+        "verification failed: the simulated result differs from the path at --to \
+         ({}); a merge commit that changes the path itself is a likely cause — \
+         try a narrower --to",
+        differing.join(", ")
+    )))
+}
+
+/// List the paths under `path` whose content differs between the simulated
+/// state tree and `to`'s tree (or a single "path present/absent" entry).
+fn differing_files(
+    repo: &Repository,
+    state: &Tree<'_>,
+    path: &Path,
+    to_entry: Option<(Oid, i32)>,
+) -> Result<Vec<String>, Error> {
+    let prefix = path.to_string_lossy().into_owned();
+    let state_sub = match repo::tree_entry(state, path)? {
+        Some((id, mode)) if mode == i32::from(FileMode::Tree) => Some(repo.find_tree(id)?),
+        _ => None,
+    };
+    let to_sub = match to_entry {
+        Some((id, mode)) if mode == i32::from(FileMode::Tree) => Some(repo.find_tree(id)?),
+        _ => None,
+    };
+    if state_sub.is_none() || to_sub.is_none() {
+        return Ok(vec![format!(
+            "{prefix} (present on one side only or blob differs)"
+        )]);
+    }
+    let mut files = Vec::new();
+    let diff = repo.diff_tree_to_tree(state_sub.as_ref(), to_sub.as_ref(), None)?;
+    for delta in diff.deltas() {
+        if let Some(p) = delta.new_file().path().or_else(|| delta.old_file().path()) {
+            files.push(format!("{prefix}/{}", p.to_string_lossy()));
+        }
+        if files.len() >= 20 {
+            files.push("...".to_string());
+            break;
+        }
+    }
+    Ok(files)
 }

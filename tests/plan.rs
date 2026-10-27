@@ -30,6 +30,8 @@ fn step_ids(p: &quickpick::plan::Plan) -> Vec<git2::Oid> {
         .collect()
 }
 
+// ---- 4.1 entry lookup and "touches the path" ----
+
 #[test]
 fn entry_and_touches_for_file_dir_and_absent_path() {
     let History { fx, c1, c2, .. } = history();
@@ -137,22 +139,6 @@ fn merge_commits_are_skipped_but_their_commits_are_walked() {
     let mut expected = vec![c2, s1, c3];
     expected.sort();
     assert_eq!(ids, expected);
-}
-
-#[test]
-fn usage_error_on_bad_path() {
-    let History { fx, .. } = history();
-    for bad in ["/abs/path", "../up", ""] {
-        let mut req = request(bad);
-        req.path = bad.into();
-        let err = plan(&fx.repo, &req).unwrap_err();
-        assert!(matches!(err, Error::Usage(_)), "{bad}: {err:?}");
-        assert_eq!(err.exit_code(), 2);
-    }
-    // Trailing slash is normalized away.
-    let mut req = request("pkg/");
-    req.path = "pkg/".into();
-    assert!(plan(&fx.repo, &req).unwrap().verified);
 }
 
 // ---- 4.3 range ends ----
@@ -301,4 +287,75 @@ fn path_deletion_in_a_sync_removes_the_path() {
         other => panic!("unexpected steps: {other:?}"),
     }
     assert!(p.verified);
+}
+
+#[test]
+fn usage_error_on_bad_path() {
+    let History { fx, .. } = history();
+    for bad in ["/abs/path", "../up", ""] {
+        let mut req = request(bad);
+        req.path = bad.into();
+        let err = plan(&fx.repo, &req).unwrap_err();
+        assert!(matches!(err, Error::Usage(_)), "{bad}: {err:?}");
+        assert_eq!(err.exit_code(), 2);
+    }
+    // Trailing slash is normalized away.
+    let mut req = request("pkg/");
+    req.path = "pkg/".into();
+    assert!(plan(&fx.repo, &req).unwrap().verified);
+}
+
+// ---- 5.3 sync merging and verification ----
+
+#[test]
+fn adjacent_syncs_merge_into_one_step() {
+    let History { fx, c1, .. } = history();
+    let s1 = fx.commit(&[c1], &[w("pkg/file", "v3"), w("other", "x")], "sync 1");
+    let s2 = fx.commit(&[s1], &[w("pkg/file", "v4"), w("other2", "y")], "sync 2");
+    let pick = fx.commit(&[s2], &[w("pkg/file", "v5")], "pick");
+    fx.branch("master", pick);
+
+    let p = plan(&fx.repo, &request("pkg")).unwrap();
+    match &p.steps[..] {
+        [
+            Step::Sync {
+                covered, target, ..
+            },
+            Step::Pick { commit },
+        ] => {
+            assert_eq!(covered.len(), 2);
+            assert_eq!(covered[0].0.id, s1);
+            assert_eq!(covered[1].0.id, s2);
+            assert_eq!(target.id, s2);
+            assert_eq!(commit.id, pick);
+        }
+        other => panic!("unexpected steps: {other:?}"),
+    }
+    assert!(p.verified);
+}
+
+#[test]
+fn evil_merge_fails_verification() {
+    let fx = Fx::new();
+    // 5-line file so the target's change (line 5) and the post-merge
+    // commit's change (line 2) merge cleanly but leave line 5 wrong.
+    let mb = fx.commit(
+        &[],
+        &[w("pkg/f", "a\nb\nc\nd\ne\n"), w("other", "o")],
+        "base",
+    );
+    let c1 = fx.commit(&[mb], &[w("pkg/f", "a\nb\nc\nd\ny\n")], "anchor");
+    let s = fx.commit(&[mb], &[w("other", "s")], "side");
+    // Evil merge: resolves the path to a third content ("m" on line 5).
+    let m = fx.commit(&[c1, s], &[w("pkg/f", "a\nb\nc\nd\nm\n")], "evil merge");
+    let c2 = fx.commit(&[m], &[w("pkg/f", "a\nz\nc\nd\nm\n")], "tip");
+    let ot = fx.commit(&[mb], &[w("pkg/f", "a\nb\nc\nd\ny\n")], "target");
+    fx.branch("master", c2);
+    fx.branch("onto", ot);
+
+    let err = plan(&fx.repo, &request("pkg")).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("verification failed"), "{msg}");
+    assert!(msg.contains("merge"), "{msg}");
+    assert_eq!(err.exit_code(), 1);
 }

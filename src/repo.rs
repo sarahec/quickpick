@@ -1,5 +1,4 @@
-//! Repository access via `git2`: opening, revision resolution, the
-//! in-memory object-database backend used for planning writes, and
+//! Repository access via `git2`: opening, revision resolution and
 //! path-entry lookup against the object database.
 
 use std::path::{Path, PathBuf};
