@@ -9,7 +9,7 @@
 
 ## 2. CLI and configuration
 
-- [ ] 2.1 Define `Cli` with the `propose`, `generate` and `configure` subcommands (replacing the scaffolded `config` variant), and a shared flattened `PlanArgs` (`--onto`, `--source`, `--from`, `--to`, `--vcs`, `--branch`, positional `<path>`); verify with unit tests that a missing subcommand and a missing path both fail with usage errors
+- [x] 2.1 Define `Cli` with the `propose`, `generate` and `configure` subcommands (replacing the scaffolded `config` variant), and a shared flattened `PlanArgs` (`--onto`, `--source`, `--from`, `--to`, `--vcs`, `--branch`, positional `<path>`); verify with unit tests that a missing subcommand and a missing path both fail with usage errors
 - [ ] 2.2 Add visible aliases `p` (propose), `g` (generate), and `c` plus `config` (configure); verify with unit tests that each alias parses to the same command as its full name, and that `qp --help` output lists the aliases
 - [ ] 2.3 Define the clapfig settings struct (`repo`, `source` defaulting to `master`, `onto`, `vcs` as a `git`/`jujutsu` enum defaulting to `git`, `branch`) with `QUICKPICK` as the env prefix and `quickpick.toml` as the file; verify with unit tests the precedence flag > env > file > default, and that an invalid `vcs` lists the allowed values
 - [ ] 2.4 Report a missing `onto` with a message naming the flag, `QUICKPICK__ONTO` and the config key; verify with a unit test

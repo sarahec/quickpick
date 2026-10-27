@@ -14,7 +14,7 @@ use cli::Cli;
 /// Run the selected subcommand.
 pub fn run(cli: Cli) {
     match cli.command {
-        cli::Commands::Config(_) => {}
+        cli::Commands::Configure(_) | cli::Commands::Propose(_) | cli::Commands::Generate(_) => {}
     }
 }
 
