@@ -9,6 +9,39 @@ use git2::{Commit, FileMode, Index, Oid, Repository, Sort, Tree};
 use crate::error::Error;
 use crate::repo;
 
+/// A parsed `--range <a>..<b>`: each side is an optional bound spec.
+///
+/// `a` is the exclusive floor (`None` derives it from the anchor); `b` is
+/// the inclusive range end (`None` means the newest source commit touching
+/// the path).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Range {
+    /// Left side (exclusive).
+    pub start: Option<String>,
+    /// Right side (inclusive end).
+    pub end: Option<String>,
+}
+
+impl std::str::FromStr for Range {
+    type Err = String;
+
+    /// Parse `<a>..<b>`; either side may be empty but `..` is required.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let err = || format!("malformed range '{s}': expected <a>..<b>");
+        let Some((a, b)) = s.split_once("..") else {
+            return Err(err());
+        };
+        if b.contains("..") {
+            return Err(err());
+        }
+        let side = |s: &str| (!s.is_empty()).then(|| s.to_string());
+        Ok(Range {
+            start: side(a),
+            end: side(b),
+        })
+    }
+}
+
 /// Inputs to [`plan`], after configuration resolution.
 pub struct PlanRequest {
     /// Repository-relative path (file or directory) to bring across.
@@ -686,6 +719,31 @@ fn differing_files(
 mod tests {
     use super::*;
     use git2::{Signature, Time};
+
+    #[test]
+    fn range_parses_both_sides_either_empty() {
+        use std::str::FromStr;
+        let cases = [
+            ("a..b", Some("a"), Some("b")),
+            ("a..", Some("a"), None),
+            ("..b", None, Some("b")),
+            ("..", None, None),
+        ];
+        for (spec, start, end) in cases {
+            let r = Range::from_str(spec).unwrap_or_else(|e| panic!("{spec}: {e}"));
+            assert_eq!(r.start.as_deref(), start, "{spec} start");
+            assert_eq!(r.end.as_deref(), end, "{spec} end");
+        }
+    }
+
+    #[test]
+    fn range_without_dots_is_rejected() {
+        use std::str::FromStr;
+        for bad in ["ab", "a", "a..b..c"] {
+            let err = Range::from_str(bad).unwrap_err();
+            assert!(err.contains("expected <a>..<b>"), "{bad}: {err}");
+        }
+    }
 
     /// `touches_cached` must agree with the simple `repo::touches` definition
     /// on file, directory, absent-path and filemode-only cases.

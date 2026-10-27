@@ -6,6 +6,7 @@ use clap::Parser;
 use serde::Serialize;
 
 use crate::config::Vcs;
+use crate::plan::Range;
 
 /// Command line for `qp`.
 ///
@@ -43,7 +44,7 @@ pub struct Cli {
     /// may be empty. Each bound is `branch`, a commit, or `branch@commit`.
     #[serde(skip_serializing)]
     #[arg(long, short = 'r', value_name = "A..B")]
-    pub range: Option<String>,
+    pub range: Option<Range>,
     /// Target revision to bring the path onto (required; may come from
     /// QUICKPICK__ONTO or quickpick.toml instead). Accepts the same bound
     /// syntax as a range side.
@@ -100,8 +101,16 @@ mod tests {
     fn short_range_flag_parses_like_the_long_one() {
         for flag in ["--range", "-r"] {
             let cli = parse(&["qp", flag, "a..b", "p"]).unwrap();
-            assert_eq!(cli.range.as_deref(), Some("a..b"), "{flag}");
+            let range = cli.range.expect("range parsed");
+            assert_eq!(range.start.as_deref(), Some("a"), "{flag}");
+            assert_eq!(range.end.as_deref(), Some("b"), "{flag}");
         }
+    }
+
+    #[test]
+    fn malformed_range_is_a_usage_error() {
+        let err = parse(&["qp", "--range", "ab", "p"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ValueValidation);
     }
 
     #[test]
