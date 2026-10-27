@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::cli::Cli;
 use crate::error::Error;
 
-/// Script dialect for `generate`.
+/// Script dialect.
 #[derive(Schema, Serialize, Deserialize, clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Vcs {

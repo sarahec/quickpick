@@ -43,7 +43,7 @@ pub fn run(cli: Cli) -> Result<(), Error> {
     }
     let root = repo
         .workdir()
-        .ok_or_else(|| Error::Planning("a working tree is required to generate a script".into()))?;
+        .ok_or_else(|| Error::Planning("a working tree is required to emit a script".into()))?;
     let script = match settings.vcs {
         Vcs::Git => {
             let branch = settings

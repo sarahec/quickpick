@@ -22,7 +22,7 @@
 
 ## 5. Cleanup, docs and release
 
-- [ ] 5.1 Remove dead code and stale references (subcommand/alias tests, `--from`/`--to` leftovers, `ConfigArgs`), bump the crate version to `0.2.0`, and update `README.md` with the new surface plus a 0.1 → 0.2 migration table. Verify: a search finds no `propose`/`generate`/`configure`/`--from`/`--to` references outside history, and `qp --help` shows the flat options.
+- [x] 5.1 Remove dead code and stale references (subcommand/alias tests, `--from`/`--to` leftovers, `ConfigArgs`), bump the crate version to `0.2.0`, and update `README.md` with the new surface plus a 0.1 → 0.2 migration table. Verify: a search finds no `propose`/`generate`/`configure`/`--from`/`--to` references outside history, and `qp --help` shows the flat options.
 - [ ] 5.2 Run the full checklist: `cargo build`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, and the generated-script fixture tests in both dialects. Verify: all pass.
 
 ## Workflow follow-up

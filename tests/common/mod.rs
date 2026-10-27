@@ -1,6 +1,6 @@
 //! Fixture builder for integration tests: temporary git repositories with
 //! commits, merges, branches and path deletions built directly with `git2`,
-//! plus subprocess helpers for running `qp` and generated scripts.
+//! plus subprocess helpers for running `qp` and the scripts it emits.
 //!
 //! Shared across test crates, so unused helpers are expected per target.
 #![allow(dead_code)]
@@ -272,11 +272,11 @@ pub struct Mixed {
     pub mb: Oid,
     /// Anchor parent; `pkg/file` = `"v2"`.
     pub c1: Oid,
-    /// First commit of `--from`: an in-path change that conflicts (vX vs v3).
+    /// First range commit: an in-path change that conflicts (vX vs v3).
     pub s1: Oid,
     /// Second commit: in-path change plus a file outside `pkg`.
     pub s2: Oid,
-    /// Master tip and `--to`: a clean in-path change that picks.
+    /// Master tip and range end: a clean in-path change that picks.
     pub s3: Oid,
 }
 

@@ -1,4 +1,4 @@
-//! Executing the generated scripts: they must actually produce the planned
+//! Executing the emitted scripts: they must actually produce the planned
 //! state, for both dialects.
 
 mod common;
@@ -13,7 +13,7 @@ use quickpick::repo;
 use tempfile::TempDir;
 
 #[test]
-fn generated_git_script_applies_the_plan() {
+fn git_script_applies_the_plan() {
     if !on_path("git") {
         eprintln!("skipping: git is not on PATH");
         return;
@@ -52,7 +52,7 @@ fn generated_git_script_applies_the_plan() {
 }
 
 #[test]
-fn generated_jj_script_applies_the_plan() {
+fn jj_script_applies_the_plan() {
     if !on_path("jj") {
         eprintln!("skipping: jj is not on PATH");
         return;

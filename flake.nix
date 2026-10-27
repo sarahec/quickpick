@@ -19,7 +19,7 @@
       packages = eachSystem (pkgs: {
         default = pkgs.rustPlatform.buildRustPackage {
           pname = "qp";
-          version = "0.1.0";
+          version = "0.2.0";
 
           src = ./.;
 

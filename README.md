@@ -1,13 +1,13 @@
 # quickpick (`qp`)
 
 Plan path-scoped backports across git branches. `qp` finds the commits on a
-source revision that changed one file or directory, works out which of them
-can be cherry-picked onto a target revision, and produces either a
-human-readable plan or a self-contained shell script that performs it — for
-plain git or for jujutsu.
+source line that changed one file or directory, works out which of them can
+be cherry-picked onto a target revision, and prints either a self-contained
+shell script that performs the plan or a description of it — for plain git
+or for jujutsu.
 
 Planning is strictly read-only: nothing in the repository is modified (the
-simulation runs against an in-memory object database), and the generated
+simulation runs against an in-memory object database), and the emitted
 script is only executed if you choose to run it.
 
 ## Installation
@@ -21,30 +21,49 @@ This builds and installs the `qp` executable.
 ## Usage
 
 ```sh
-qp propose  --onto release-26.05 pkgs/by-name/he/hello   # or: qp p
-qp generate --onto release-26.05 pkgs/by-name/he/hello   # or: qp g
-qp configure list                                        # or: qp c / qp config
+qp           --onto release-26.05 pkgs/by-name/he/hello   # script (default)
+qp --explain --onto release-26.05 pkgs/by-name/he/hello   # detailed plan
+qp --summary --onto release-26.05 pkgs/by-name/he/hello   # condensed plan
+qp --show-config                                          # merged settings
 ```
 
-- **`propose` (`p`)** explains the plan: the detected anchor, the commit
-  range and each PICK or SYNC step with its reason.
-- **`generate` (`g`)** prints a POSIX shell script to stdout. Review it,
+- **script (default)** prints a POSIX shell script to stdout. Review it,
   then run it with `sh` inside the repository.
-- **`configure` (`c`, `config`)** manages `quickpick.toml` (`gen`, `list`,
-  `get`, `set`, `unset`, `schema` — see `qp configure --help`).
-
-`propose` and `generate` share these options:
+- **`--explain`** explains the plan: the detected anchor, the commit range
+  and each PICK or SYNC step with its reason.
+- **`--summary`** prints the condensed plan: resolved revisions, anchor,
+  range, one numbered line per step and the verification verdict.
+  `--explain` and `--summary` are mutually exclusive.
+- **`--show-config`** prints the merged settings as `key = value` and
+  exits; it needs neither a repository nor a target.
 
 | Option | Meaning |
 |---|---|
-| `--onto <rev>` | Target revision. **Required** — as a flag, `QUICKPICK__ONTO`, or `onto` in `quickpick.toml`. |
-| `--source <rev>` | Source revision the path is taken from. Default `master`. |
-| `--from <rev>` | First source commit to copy, **inclusive**. Default: just after the detected anchor. |
-| `--to <rev>` | Last source commit to copy. Default: the newest source commit touching the path. |
+| `--onto <bound>` | Target revision. **Required** — as a flag, `QUICKPICK__ONTO`, or `onto` in `quickpick.toml`. |
+| `--source <rev>` | Source line used to resolve an empty or bare-commit range end and to bound the anchor search. Default `master`. |
+| `--range`, `-r <a..b>` | Path-touching commits reachable from `b` but not from `a` (git semantics: `a` is exclusive). Either side may be empty. |
 | `--vcs <git\|jujutsu>` | Script dialect. Default `git`. |
 | `--branch <name>` | Branch name for the git dialect. Default `quickpick/<last path component>`. |
 | `--repo <dir>` | Repository to operate on. Default: the current working directory. |
 | `<path>` | Repository-relative path to a file or directory. |
+
+### Bounds and ranges
+
+Each `--range` side and `--onto` is a *bound*: `branch`, a commit, or
+`branch@commit`. A bare `branch` resolves to its tip; `branch@commit`
+asserts the commit is reachable from the branch, which catches "pinned to
+the wrong line" mistakes.
+
+`--range a..b` uses git's range semantics: `a` is the exclusive floor.
+
+- `a` empty → the detected anchor: the newest path-touching commit whose
+  content equals the target's (fails if none matches; pass an explicit `a`).
+- `b` empty → the newest commit touching the path on the source line.
+- `b` naming a branch (`release-26.05`, `staging@abc`) supplies its own
+  line; a bare-commit `b` must be reachable from `source`.
+
+`--range release-26.05..master` reads naturally: every path-touching
+commit on `master` that is not on `release-26.05`.
 
 ## Configuration
 
@@ -60,7 +79,9 @@ Settings are resolved in layers; later sources lose to earlier ones:
 | `vcs` | `QUICKPICK__VCS` | `--vcs` | `git` \| `jujutsu` | `git` |
 | `branch` | `QUICKPICK__BRANCH` | `--branch` | string | `quickpick/<path component>` |
 
-`qp configure gen` writes a starter `quickpick.toml`.
+`quickpick.toml` lives in the platform config directory
+(`~/.config/quickpick/quickpick.toml` on Linux) and is edited by hand;
+`qp --show-config` prints the merged result.
 
 ## Dialects
 
@@ -78,7 +99,7 @@ target. A SYNC commit records which source commits it replaces and why.
 ## Example
 
 ```console
-$ qp propose --repo ~/nixpkgs --source master --onto release-26.05 pkgs/by-name/he/hello
+$ qp --explain --repo ~/nixpkgs --onto release-26.05 pkgs/by-name/he/hello
 source:  master (b9dca90)
 target:  release-26.05 (ee180b2)
 path:    pkgs/by-name/he/hello
@@ -88,7 +109,7 @@ steps:
 verification: OK, result matches pkgs/by-name/he/hello at 388307b
 ```
 
-`qp generate` for the same plan prints a script like:
+The same plan with no mode flag prints a script like:
 
 ```sh
 #!/bin/sh
@@ -99,3 +120,18 @@ git switch -c 'quickpick/hello' ee180b2…
 # PICK 388307b hello: `strictDeps` & `enableParallelBuilding`
 git cherry-pick -x 388307b…
 ```
+
+## Migrating from 0.1
+
+| 0.1 | 0.2 |
+|---|---|
+| `qp propose …` | `qp --explain …` |
+| `qp generate …` | `qp …` (script is the default) |
+| `qp configure …` | edit `quickpick.toml`; inspect with `qp --show-config` |
+| `--from X` | `--range X^..` |
+| `--to Y` | `--range ..Y` |
+| `--from X --to Y` | `--range X^..Y` |
+
+The range floor changed from inclusive (`--from`) to exclusive (`a` in
+`a..b`), so a 0.1 `--from X` is spelled `X^..` in 0.2. `--range` also has
+the short form `-r`.
