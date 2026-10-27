@@ -24,10 +24,13 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Explain the planned steps in human-readable form.
+    #[command(visible_alias = "p")]
     Propose(PlanArgs),
     /// Print a self-contained shell script that performs the plan.
+    #[command(visible_alias = "g")]
     Generate(PlanArgs),
     /// Manage the configuration file (gen, list, get, set, unset, schema).
+    #[command(visible_aliases = ["c", "config"])]
     Configure(ConfigArgs),
 }
 
@@ -62,7 +65,7 @@ pub struct PlanArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::error::ErrorKind;
+    use clap::{CommandFactory, error::ErrorKind};
 
     fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
         Cli::try_parse_from(args)
@@ -81,5 +84,36 @@ mod tests {
     fn missing_path_is_a_usage_error() {
         let err = parse(&["qp", "propose", "--onto", "release-26.05"]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn aliases_parse_to_the_same_commands() {
+        for (full, short) in [
+            ("propose", "p"),
+            ("generate", "g"),
+            ("configure", "c"),
+            ("configure", "config"),
+        ] {
+            let args = match full {
+                "configure" => vec!["qp", short, "list"],
+                _ => vec!["qp", short, "--onto", "t", "p/x"],
+            };
+            let cli = parse(&args).unwrap_or_else(|e| panic!("{short}: {e}"));
+            match (&cli.command, full) {
+                (Commands::Propose(_), "propose")
+                | (Commands::Generate(_), "generate")
+                | (Commands::Configure(_), "configure") => {}
+                (other, _) => panic!("alias {short} parsed to {other:?}, expected {full}"),
+            }
+        }
+    }
+
+    #[test]
+    fn help_lists_the_aliases() {
+        let help = Cli::command().render_long_help().to_string();
+        for alias in ["p", "g", "c", "config"] {
+            assert!(help.contains(alias), "help missing alias {alias}:\n{help}");
+        }
+        assert!(help.contains("Usage: qp"), "{help}");
     }
 }
