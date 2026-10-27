@@ -5,6 +5,7 @@ mod common;
 use std::path::Path;
 
 use common::*;
+use quickpick::repo;
 
 #[test]
 fn fixture_builder_self_test() {
@@ -31,4 +32,36 @@ fn fixture_builder_self_test() {
         .get_path(Path::new("a/run"))
         .unwrap();
     assert_eq!(e.filemode(), 0o100755);
+}
+
+#[test]
+fn open_rejects_non_repository() {
+    let dir = tempfile::tempdir().unwrap();
+    let err = repo::open(Some(dir.path())).err().unwrap();
+    assert!(err.to_string().contains("is not a git repository"), "{err}");
+    assert_eq!(err.exit_code(), 1);
+}
+
+#[test]
+fn resolve_names_the_role_and_revision() {
+    let fx = Fx::new();
+    let c = fx.commit(&[], &[w("f", "x")], "c");
+    fx.branch("master", c);
+    assert_eq!(repo::resolve(&fx.repo, "master", "--source").unwrap(), c);
+
+    let err = repo::resolve(&fx.repo, "nope", "--onto").unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("--onto"), "{msg}");
+    assert!(msg.contains("nope"), "{msg}");
+}
+
+#[test]
+fn source_master_does_not_fall_back_to_remotes() {
+    let fx = Fx::new();
+    let c = fx.commit(&[], &[w("f", "x")], "c");
+    fx.repo
+        .reference("refs/remotes/upstream/master", c, true, "fixture")
+        .unwrap();
+    let err = repo::resolve(&fx.repo, "master", "--source").unwrap_err();
+    assert!(err.to_string().contains("master"), "{err}");
 }
