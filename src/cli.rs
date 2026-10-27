@@ -13,7 +13,14 @@ use crate::config::Vcs;
 #[command(
     name = "qp",
     version,
-    about = "Plan path-scoped backports across git branches"
+    about = "Plan path-scoped backports across git branches",
+    long_about = "Plan path-scoped backports across git branches.\n\n\
+        quickpick finds the commits on a source revision that changed one \
+        path, works out which of them can be cherry-picked onto a target \
+        revision, and either explains the plan (propose) or emits a \
+        self-contained shell script that performs it (generate), for git \
+        or jujutsu. Planning is strictly read-only: nothing in the \
+        repository is modified."
 )]
 pub struct Cli {
     /// The subcommand to run.
@@ -25,10 +32,21 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Explain the planned steps in human-readable form.
-    #[command(visible_alias = "p")]
+    #[command(
+        visible_alias = "p",
+        long_about = "Explain the planned steps in human-readable form: the \
+            anchor, the commit range (from --from, inclusive, to --to), and \
+            each PICK or SYNC step with its reason."
+    )]
     Propose(PlanArgs),
     /// Print a self-contained shell script that performs the plan.
-    #[command(visible_alias = "g")]
+    #[command(
+        visible_alias = "g",
+        long_about = "Print a self-contained POSIX shell script that performs \
+            the plan: cherry-picks for PICK steps and content-restoring \
+            commits for SYNC steps, in the selected dialect (git or \
+            jujutsu). Review it, then run it with `sh` inside the repository."
+    )]
     Generate(PlanArgs),
     /// Manage the configuration file (gen, list, get, set, unset, schema).
     #[command(visible_aliases = ["c", "config"])]
@@ -45,7 +63,8 @@ pub struct PlanArgs {
     /// Repository-relative path to a file or directory.
     #[serde(skip_serializing)]
     pub path: PathBuf,
-    /// Target revision to bring the path onto (required unless configured).
+    /// Target revision to bring the path onto (required; may come from
+    /// QUICKPICK__ONTO or quickpick.toml instead).
     #[arg(long)]
     pub onto: Option<String>,
     /// Source revision.
