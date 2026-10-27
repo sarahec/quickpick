@@ -36,7 +36,7 @@
 ## 6. Rendering
 
 - [x] 6.1 Implement the cherry-pick message (original message, blank line, `(cherry picked from commit <full sha>)`) and the sync message format from the spec; verify with string-comparison unit tests, including a multi-commit sync and a path removal
-- [ ] 6.2 Implement `propose` output: resolved source, target, range, anchor, ordered steps with kind, SHA, date and summary, sync reasons, warnings, verification result, plus the jj conflict note when `vcs = jujutsu`; verify with snapshot-style string tests
+- [x] 6.2 Implement `propose` output: resolved source, target, range, anchor, ordered steps with kind, SHA, date and summary, sync reasons, warnings, verification result, plus the jj conflict note when `vcs = jujutsu`; verify with snapshot-style string tests
 - [ ] 6.3 Implement the git dialect script (shebang, `set -eu`, `cd`, `git switch -c`, `cherry-pick -x`, `rm` + `checkout` + `commit -F -` for syncs, removal syncs, `quickpick/<last component>` as the default branch) with safe single-quoting and here-documents; verify with string tests, including paths and messages containing quotes
 - [ ] 6.4 Implement the jujutsu dialect script (`jj new`, `jj duplicate -B @` + `jj describe @-`, `jj restore --from` with a `root:` fileset + `describe` + `new` for syncs, final `jj log -r 'conflicts()'`); verify with string tests
 
