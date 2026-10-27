@@ -59,6 +59,63 @@ fn resolve_names_the_role_and_revision() {
 }
 
 #[test]
+fn bound_resolves_branch_commit_and_pin() {
+    let History { fx, c1, c3, .. } = history();
+    // A bare branch resolves to its tip and names the line.
+    let b = repo::resolve_bound(&fx.repo, "master", "--range").unwrap();
+    assert_eq!(b.oid, c3);
+    assert_eq!(b.line.as_deref(), Some("master"));
+    // A bare commit resolves but names no line.
+    let b = repo::resolve_bound(&fx.repo, &c1.to_string(), "--range").unwrap();
+    assert_eq!(b.oid, c1);
+    assert_eq!(b.line, None);
+    // `branch@commit` on the line pins the commit and names the line.
+    let b = repo::resolve_bound(&fx.repo, &format!("master@{c1}"), "--range").unwrap();
+    assert_eq!(b.oid, c1);
+    assert_eq!(b.line.as_deref(), Some("master"));
+    // A remote-tracking branch is a line too.
+    fx.repo
+        .reference("refs/remotes/upstream/stable", c3, true, "fixture")
+        .unwrap();
+    let b = repo::resolve_bound(&fx.repo, "upstream/stable", "--range").unwrap();
+    assert_eq!(b.oid, c3);
+    assert_eq!(b.line.as_deref(), Some("upstream/stable"));
+}
+
+#[test]
+fn bound_pin_off_its_line_errors() {
+    let History { fx, c1, .. } = history();
+    // c1 is not reachable from `onto`, which branched at the merge base.
+    let err = repo::resolve_bound(&fx.repo, &format!("onto@{c1}"), "--onto").unwrap_err();
+    assert!(err.to_string().contains("is not on onto"), "{err}");
+}
+
+#[test]
+fn bound_prefers_a_real_refname_containing_at() {
+    let History { fx, c1, c3, .. } = history();
+    // A branch literally named `foo@<c3>` resolves whole rather than as the
+    // pin form `foo` + `<c3>` — even though the right side resolves, the
+    // refname must win, so the bound lands on `foo@<c3>`'s tip (c1).
+    let bar = format!("{c3}");
+    fx.branch(&format!("foo@{bar}"), c1);
+    let b = repo::resolve_bound(&fx.repo, &format!("foo@{bar}"), "--onto").unwrap();
+    assert_eq!(b.oid, c1, "the refname must win over the pin form");
+    assert_eq!(b.line.as_deref(), Some(format!("foo@{bar}").as_str()));
+}
+
+#[test]
+fn bound_unresolvable_errors() {
+    let History { fx, .. } = history();
+    let err = repo::resolve_bound(&fx.repo, "nope", "--onto").unwrap_err();
+    assert!(err.to_string().contains("does not resolve"), "{err}");
+    // `@` alone is git shorthand for HEAD and resolves; empty sides do not.
+    for bad in ["nope@", "@nope"] {
+        let err = repo::resolve_bound(&fx.repo, bad, "--onto").unwrap_err();
+        assert!(err.to_string().contains("does not resolve"), "{bad}: {err}");
+    }
+}
+
+#[test]
 fn source_master_does_not_fall_back_to_remotes() {
     let fx = Fx::new();
     let c = fx.commit(&[], &[w("f", "x")], "c");
