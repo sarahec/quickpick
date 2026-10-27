@@ -105,6 +105,26 @@ fn no_anchor_errors_without_a_range_start() {
 }
 
 #[test]
+fn onto_pinned_to_its_line_is_accepted() {
+    let History { fx, ot, c2, c3, .. } = history();
+    let mut req = request("pkg");
+    req.onto = format!("onto@{ot}");
+    let p = plan(&fx.repo, &req).unwrap();
+    assert_eq!(p.onto, ot);
+    assert_eq!(step_ids(&p), vec![c2, c3]);
+    assert!(p.verified);
+}
+
+#[test]
+fn onto_pinned_off_its_line_errors_naming_the_branch() {
+    let History { fx, c1, .. } = history();
+    let mut req = request("pkg");
+    req.onto = format!("onto@{c1}");
+    let err = plan(&fx.repo, &req).unwrap_err();
+    assert!(err.to_string().contains("is not on onto"), "{err}");
+}
+
+#[test]
 fn already_in_sync_is_an_empty_plan() {
     let History { fx, mb, c3, .. } = history();
     let ot = fx.commit(&[mb], &[w("pkg/file", "v4")], "target in sync");

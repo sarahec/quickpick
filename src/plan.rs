@@ -152,7 +152,7 @@ pub struct Plan {
 pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
     repo::install_mempack(repo)?;
     let path = normalize_path(&req.path)?;
-    let onto = repo::resolve(repo, &req.onto, "--onto")?;
+    let onto = repo::resolve_bound(repo, &req.onto, "--onto")?.oid;
     let target = repo::path_entry(repo, onto, &path)?;
 
     let mut entries = HashMap::new();
