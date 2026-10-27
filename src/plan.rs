@@ -1,9 +1,10 @@
 //! Planning: range and anchor detection, step classification, sync merging
 //! and plan verification.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use git2::{Commit, Oid, Repository, Sort};
+use git2::{Commit, Oid, Repository, Sort, Tree};
 
 use crate::error::Error;
 use crate::repo;
@@ -35,6 +36,24 @@ pub struct CommitInfo {
     pub author_time: i64,
     /// Author timezone offset in minutes.
     pub author_offset_minutes: i32,
+}
+
+impl CommitInfo {
+    fn of(repo: &Repository, id: Oid) -> Result<Self, Error> {
+        let c = repo.find_commit(id)?;
+        Ok(Self {
+            id,
+            summary: c
+                .summary()
+                .ok()
+                .flatten()
+                .map(str::to_string)
+                .unwrap_or_default(),
+            message: c.message().ok().map(str::to_string).unwrap_or_default(),
+            author_time: c.time().seconds(),
+            author_offset_minutes: c.time().offset_minutes(),
+        })
+    }
 }
 
 /// Why a commit could not be cherry-picked.
@@ -137,6 +156,17 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
 
     let range = range_walk(repo, to, anchor, from, &path)?;
 
+    let mut sim = Simulation {
+        repo,
+        path: &path,
+        warnings: &mut warnings,
+        warned: BTreeSet::new(),
+        steps: Vec::new(),
+    };
+    for id in &range {
+        sim.step(repo.find_commit(*id)?)?;
+    }
+
     // `from` is the first commit of the range for reporting purposes.
     let from_oid = from.or(range.first().copied());
     Ok(Plan {
@@ -147,7 +177,7 @@ pub fn plan(repo: &Repository, req: &PlanRequest) -> Result<Plan, Error> {
         from: from_oid,
         to,
         anchor: Some(anchor),
-        steps: vec![],
+        steps: sim.steps,
         range,
         warnings,
         verified: false,
@@ -169,6 +199,11 @@ fn normalize_path(raw: &str) -> Result<PathBuf, Error> {
         )));
     }
     Ok(path)
+}
+
+/// Whether `p` equals `path` or lives under it.
+fn under(path: &Path, p: &Path) -> bool {
+    p == path || p.starts_with(path)
 }
 
 /// Resolve `--to`, or find the newest non-merge source commit touching `path`.
@@ -303,4 +338,84 @@ fn range_walk(
         range.push(c.id());
     }
     Ok(range)
+}
+
+/// Mutable classification state threaded through [`Simulation::step`].
+struct Simulation<'a, 'b> {
+    repo: &'a Repository,
+    path: &'b Path,
+    warnings: &'b mut Vec<String>,
+    warned: BTreeSet<String>,
+    steps: Vec<Step>,
+}
+
+impl Simulation<'_, '_> {
+    /// Classify `commit` as PICK or SYNC.
+    fn step(&mut self, commit: Commit<'_>) -> Result<(), Error> {
+        let c_tree = commit.tree()?;
+        let parent_tree = match commit.parent(0) {
+            Ok(p) => p.tree()?,
+            Err(e) if e.code() == git2::ErrorCode::NotFound => empty_tree(self.repo)?,
+            Err(e) => return Err(e.into()),
+        };
+        let outside = self.outside_paths(&commit, &parent_tree, &c_tree)?;
+        let info = CommitInfo::of(self.repo, commit.id())?;
+        if !outside.is_empty() {
+            return self.sync(info, Reason::OutsidePaths(outside));
+        }
+        self.steps.push(Step::Pick { commit: info });
+        Ok(())
+    }
+
+    /// Paths changed by `commit` that lie outside the planned path; also
+    /// records shared-definition-file warnings for `pkgs/top-level/`.
+    fn outside_paths(
+        &mut self,
+        commit: &Commit<'_>,
+        parent: &Tree<'_>,
+        tree: &Tree<'_>,
+    ) -> Result<Vec<String>, Error> {
+        let mut outside = Vec::new();
+        let diff = self
+            .repo
+            .diff_tree_to_tree(Some(parent), Some(tree), None)?;
+        for delta in diff.deltas() {
+            for file in [delta.old_file(), delta.new_file()] {
+                let Some(p) = file.path() else { continue };
+                let s = p.to_string_lossy().into_owned();
+                if !under(self.path, p) {
+                    outside.push(s.clone());
+                }
+                if s.starts_with("pkgs/top-level/")
+                    && self.warned.insert(format!("{}:{s}", commit.id()))
+                {
+                    self.warnings.push(format!(
+                        "{} also touches {s}, which quickpick does not copy; the target may need \
+                         that change too",
+                        &commit.id().to_string()[..7]
+                    ));
+                }
+            }
+        }
+        outside.sort();
+        outside.dedup();
+        Ok(outside)
+    }
+
+    /// Record a SYNC step.
+    fn sync(&mut self, info: CommitInfo, reason: Reason) -> Result<(), Error> {
+        let entry = repo::path_entry(self.repo, info.id, self.path)?;
+        self.steps.push(Step::Sync {
+            removes_path: entry.is_none(),
+            covered: vec![(info.clone(), reason)],
+            target: info,
+        });
+        Ok(())
+    }
+}
+
+/// The empty tree, used as the merge ancestor for root commits.
+fn empty_tree(repo: &Repository) -> Result<Tree<'_>, Error> {
+    let id = repo.treebuilder(None)?.write()?;
+    Ok(repo.find_tree(id)?)
 }

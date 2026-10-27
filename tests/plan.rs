@@ -6,7 +6,7 @@ use std::path::Path;
 
 use common::*;
 use quickpick::error::Error;
-use quickpick::plan::{PlanRequest, plan};
+use quickpick::plan::{PlanRequest, Reason, Step, plan};
 use quickpick::repo;
 
 fn request(path: &str) -> PlanRequest {
@@ -194,6 +194,52 @@ fn from_mismatch_warns() {
     let p = plan(&fx.repo, &req).unwrap();
     assert!(
         p.warnings.iter().any(|w| w.contains("--from")),
+        "warnings: {:?}",
+        p.warnings
+    );
+}
+
+// ---- 5.1 outside paths and shared-definition warnings ----
+
+#[test]
+fn outside_touching_commit_syncs_with_paths_and_warns() {
+    let History { fx, c1, c3, .. } = history();
+    let outside = fx.commit(
+        &[c1],
+        &[
+            w("pkg/file", "v3"),
+            w("other", "o2"),
+            w("pkgs/top-level/all-packages.nix", "ap"),
+        ],
+        "bump + outside",
+    );
+    let c4 = fx.commit(&[outside], &[w("pkg/file", "v9")], "follow-up");
+    let _ = c3;
+    fx.branch("master", c4);
+
+    let p = plan(&fx.repo, &request("pkg")).unwrap();
+    match &p.steps[..] {
+        [
+            Step::Sync {
+                covered, target, ..
+            },
+            Step::Pick { commit },
+        ] => {
+            let Reason::OutsidePaths(paths) = &covered[0].1 else {
+                panic!("expected OutsidePaths: {:?}", covered[0].1)
+            };
+            assert!(paths.contains(&"other".to_string()));
+            assert!(paths.contains(&"pkgs/top-level/all-packages.nix".to_string()));
+            assert_eq!(target.id, outside);
+            assert_eq!(commit.id, c4);
+        }
+        other => panic!("unexpected steps: {other:?}"),
+    }
+    // The shared definition file warning names the commit and the file.
+    assert!(
+        p.warnings
+            .iter()
+            .any(|w| w.contains("all-packages.nix") && w.contains(&outside.to_string()[..7])),
         "warnings: {:?}",
         p.warnings
     );
