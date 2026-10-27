@@ -22,6 +22,15 @@ pub enum Vcs {
     Jujutsu,
 }
 
+impl std::fmt::Display for Vcs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Vcs::Git => "git",
+            Vcs::Jujutsu => "jujutsu",
+        })
+    }
+}
+
 /// The `quickpick.toml` settings schema.
 #[derive(Schema, Serialize, Deserialize, Debug)]
 pub struct Settings {
@@ -54,13 +63,38 @@ pub fn load(args: &Cli) -> Result<Settings, Error> {
     load_from(builder(), args)
 }
 
-/// Like [`load`], but on a caller-configured builder (used by tests to
-/// isolate file and environment layers).
-fn load_from(b: TypedBuilder<Settings>, args: &Cli) -> Result<Settings, Error> {
-    let settings = b
-        .cli_overrides_from(args)
+/// Load merged settings without requiring `onto` (for `--show-config`).
+pub fn merged(args: &Cli) -> Result<Settings, Error> {
+    merge_from(builder(), args)
+}
+
+/// The merged settings as `key = value` lines for `--show-config`.
+pub fn show(s: &Settings) -> String {
+    let unset = "<unset>";
+    let repo = s
+        .repo
+        .as_deref()
+        .map_or(unset.into(), |p| p.display().to_string());
+    format!(
+        "repo = {repo}\nsource = {}\nonto = {}\nvcs = {}\nbranch = {}\n",
+        s.source,
+        s.onto.as_deref().unwrap_or(unset),
+        s.vcs,
+        s.branch.as_deref().unwrap_or(unset),
+    )
+}
+
+/// Merge every layer without validating `onto` (used by tests to isolate
+/// file and environment layers).
+fn merge_from(b: TypedBuilder<Settings>, args: &Cli) -> Result<Settings, Error> {
+    b.cli_overrides_from(args)
         .load()
-        .map_err(|e| Error::Config(e.to_string()))?;
+        .map_err(|e| Error::Config(e.to_string()))
+}
+
+/// Like [`load`], but on a caller-configured builder.
+fn load_from(b: TypedBuilder<Settings>, args: &Cli) -> Result<Settings, Error> {
+    let settings = merge_from(b, args)?;
     if settings.onto.is_none() {
         return Err(Error::MissingOnto);
     }

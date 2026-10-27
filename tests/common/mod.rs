@@ -305,22 +305,29 @@ pub fn mixed() -> Mixed {
     }
 }
 
-/// Run `qp` with a scrubbed environment: only PATH, HOME and an empty
-/// XDG_CONFIG_HOME survive, so no user `quickpick.toml` or `QUICKPICK__*`
-/// variable leaks in.
-pub fn qp<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> (Output, TempDir) {
+/// A `qp` command with a scrubbed environment — only PATH, HOME and an
+/// empty XDG_CONFIG_HOME survive — plus the TempDir holding HOME. Tests
+/// that need to seed `$XDG_CONFIG_HOME/quickpick/quickpick.toml` or env
+/// vars build on this and add `.args()`/`.output()` themselves.
+pub fn qp_cmd() -> (Command, TempDir) {
     let home = TempDir::new().unwrap();
     let cfg = home.path().join("cfg");
     std::fs::create_dir(&cfg).unwrap();
     let path = std::env::var_os("PATH").unwrap_or_default();
-    let out = Command::new(env!("CARGO_BIN_EXE_qp"))
-        .args(args)
-        .env_clear()
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_qp"));
+    cmd.env_clear()
         .env("PATH", path)
         .env("HOME", home.path())
-        .env("XDG_CONFIG_HOME", &cfg)
-        .output()
-        .unwrap();
+        .env("XDG_CONFIG_HOME", &cfg);
+    (cmd, home)
+}
+
+/// Run `qp` with a scrubbed environment: only PATH, HOME and an empty
+/// XDG_CONFIG_HOME survive, so no user `quickpick.toml` or `QUICKPICK__*`
+/// variable leaks in.
+pub fn qp<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> (Output, TempDir) {
+    let (mut cmd, home) = qp_cmd();
+    let out = cmd.args(args).output().unwrap();
     (out, home)
 }
 

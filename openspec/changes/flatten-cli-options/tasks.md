@@ -7,7 +7,7 @@
 
 ## 2. Settings: `--show-config`
 
-- [ ] 2.1 Implement `--show-config`: print merged settings as `key = value` and exit 0 before repository opening and without requiring `onto`. Verify: a test prints merged values (including a file-layer override) in a directory that is not a repository.
+- [x] 2.1 Implement `--show-config`: print merged settings as `key = value` and exit 0 before repository opening and without requiring `onto`. Verify: a test prints merged values (including a file-layer override) in a directory that is not a repository.
 
 ## 3. Range plumbing
 

@@ -44,6 +44,37 @@ fn nothing_to_do_exits_zero_with_empty_script_stdout() {
 }
 
 #[test]
+fn show_config_prints_merged_values_outside_a_repo() {
+    let (mut cmd, home) = qp_cmd();
+    let cfgdir = home.path().join("cfg").join("quickpick");
+    std::fs::create_dir(&cfgdir).unwrap();
+    std::fs::write(
+        cfgdir.join("quickpick.toml"),
+        "vcs = \"jujutsu\"\nonto = \"release-26.05\"\n",
+    )
+    .unwrap();
+    // Run in a directory that is not a repository and without --repo:
+    // show-config must exit before repository opening and without a path.
+    let dir = tempfile::tempdir().unwrap();
+    let out = cmd
+        .current_dir(dir.path())
+        .arg("--show-config")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    let s = stdout(&out);
+    for line in [
+        "repo = <unset>",
+        "source = master",
+        "onto = release-26.05",
+        "vcs = jujutsu",
+        "branch = <unset>",
+    ] {
+        assert!(s.contains(line), "missing {line:?} in:\n{s}");
+    }
+}
+
+#[test]
 fn missing_onto_exits_one_and_names_the_env_var() {
     let History { fx, .. } = history();
     let (out, _h) = qp(&["--repo", &fx.dir.path().to_string_lossy(), "pkg"]);

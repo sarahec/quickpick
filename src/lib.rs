@@ -21,9 +21,9 @@ use plan::{Plan, PlanRequest};
 /// returned as an [`Error`] for the caller to print and map to an exit code.
 pub fn run(cli: Cli) -> Result<(), Error> {
     if cli.show_config {
-        return Err(Error::Planning(
-            "--show-config is not implemented yet".into(),
-        ));
+        let settings = config::merged(&cli)?;
+        print!("{}", config::show(&settings));
+        return Ok(());
     }
     if cli.range.is_some() {
         return Err(Error::Planning("--range is not implemented yet".into()));
